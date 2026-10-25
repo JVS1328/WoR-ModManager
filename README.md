@@ -1,6 +1,6 @@
 # WoR Mod Manager
 
-A single-exe, Steam-Workshop-style mod manager for War of Rights. Players install, update, disable and uninstall mods from the "Official Mods" list; it also imports local paks and ReShade presets. Mods are plain `.pak` files in the game's `Assets` folder, downloaded from public GitHub releases and verified by SHA-256.
+A single-exe, Steam-Workshop-style mod manager for War of Rights. Players install, update, disable and uninstall Red's mods from the **Red's Corner** list; it also imports other local paks (optionally linked to their Nexus page, so the manager says when a new version is posted) and ReShade presets. Mods are plain `.pak` files in the game's `Assets` folder, downloaded from public GitHub releases and verified by SHA-256.
 
 ## Build and publish the exe
 
@@ -17,7 +17,7 @@ dotnet test       # Core tests
 
 Running managers see the new tag and show an "update available" bar.
 
-## Official Mods list
+## Red's Corner list
 
 `catalog.txt` at the repo root: one mod per line, the mod's releases repo URL; line order is card order; `#` starts a comment. Add a line to list a mod, delete it to remove it. Players get changes on Refresh, no new exe needed.
 
