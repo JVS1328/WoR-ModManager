@@ -5,7 +5,7 @@ A single-exe, Steam-Workshop-style mod manager for War of Rights. Players instal
 ## Build and publish the exe
 
 ```powershell
-.\publish.ps1     # -> publish\WoRModManager.exe (self-contained, single file), the Nexus zip, and publish\legacy\
+.\publish.ps1     # -> publish\WoRModManager.exe (self-contained, single file) and the Nexus zip
 dotnet test       # Core tests
 ```
 
