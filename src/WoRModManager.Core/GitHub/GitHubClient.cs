@@ -15,7 +15,7 @@ public class GitHubClient
     private static readonly string Version =
         (Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly()).GetName().Version?.ToString(3) ?? "1.0.0";
 
-    // R2: the handler is shared with the Downloader, so we must not dispose it.
+    // the handler is shared with the Downloader, so we must not dispose it.
     public GitHubClient(HttpMessageHandler handler, string cacheDir)
     {
         _http = new HttpClient(handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(30) };

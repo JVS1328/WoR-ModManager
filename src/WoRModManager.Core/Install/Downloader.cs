@@ -13,7 +13,7 @@ public class ChecksumMismatchException(string file) : Exception($"Checksum misma
 public class Downloader(HttpMessageHandler handler)
 {
     private const int BufferSize = 81920;
-    // R2: the handler is shared with GitHubClient, so we must not dispose it.
+    // the handler is shared with GitHubClient, so we must not dispose it.
     private readonly HttpClient _http = new(handler, disposeHandler: false);
 
     public TimeSpan IdleTimeout { get; init; } = GitHubClient.IdleTimeout;

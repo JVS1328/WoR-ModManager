@@ -48,7 +48,7 @@ public sealed class MainViewModel : ObservableObject
 
     public MainViewModel(GamePaths paths)
     {
-        var handler = GitHubClient.CreateDefaultHandler(); // R2: one allowlisted handler guards API calls and downloads
+        var handler = GitHubClient.CreateDefaultHandler(); // one allowlisted handler guards API calls and downloads
         gh = new GitHubClient(handler, Path.Combine(DataDir, "HttpCache"));
         dl = new Downloader(handler);
         nexus = new NexusClient(handler);

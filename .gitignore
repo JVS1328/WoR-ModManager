@@ -1,7 +1,5 @@
 bin/
 obj/
 publish/
-.superpowers/
 *.user
 .vs/
-docs/superpowers/
