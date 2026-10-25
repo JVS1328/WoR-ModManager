@@ -32,6 +32,32 @@ public class ZipImporterTests : IDisposable
 
     string AssetText(string n) => File.ReadAllText(Path.Combine(game.Paths.Assets, n));
 
+    [Fact] public void Replace_RenamedPak_SwapsTheModsFilesCompletely()
+    {
+        File.WriteAllText(Path.Combine(game.Paths.Assets, "zBlackPowder.pak"), "old");
+        File.WriteAllText(Path.Combine(game.Paths.Assets, "zOther.pak"), "other");
+        var mods = new List<ModRecord> { Imported("imported/blackpowder", "zBlackPowder.pak"), Imported("imported/other", "zOther.pak") };
+        var zip = Zip("Blackpowder v1.1.zip", ("Blackpowder/zBlackPowder_v2.pak", "new"));
+
+        var a = ZipImporter.Analyze(zip, mods, [], game.Paths, replaceModId: "imported/blackpowder");
+        Assert.Equal(ImportKind.UpdateOf, a.Kind);
+        Assert.True(a.ReplaceAll);
+        var r = ZipImporter.Apply(a, zip, game.Paths, mods, null);
+
+        Assert.Equal("imported/blackpowder", r.Id);
+        Assert.Equal(["zBlackPowder_v2.pak"], r.Paks);
+        Assert.False(File.Exists(Path.Combine(game.Paths.Assets, "zBlackPowder.pak")));
+        Assert.Equal("new", AssetText("zBlackPowder_v2.pak"));
+        Assert.Equal("other", AssetText("zOther.pak")); // other mods untouched
+    }
+
+    [Fact] public void Replace_PakOwnedByAnotherMod_IsConflict()
+    {
+        var mods = new List<ModRecord> { Imported("imported/a", "zA.pak"), Imported("imported/b", "zB.pak") };
+        var a = ZipImporter.Analyze(Zip("a2.zip", ("zB.pak", "x")), mods, [], game.Paths, replaceModId: "imported/a");
+        Assert.Equal(["zB.pak"], a.Conflicts);
+    }
+
     [Fact] public void Analyze_BarePak_NewMod()
     {
         var pak = Path.Combine(game.Root, "zBlackPowder.pak");

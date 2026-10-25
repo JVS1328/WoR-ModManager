@@ -433,6 +433,23 @@ public class ModServiceTests
         Assert.True(File.Exists(Path.Combine(f.P.Assets, "z_maw_A.pak")));
     }
 
+    [Fact] public void LinkNexus_StoresModIdAndBaselineVersion_ThenClears()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("zBlackPowder.pak", B("a"));
+        var r = f.Svc.Adopt(["zBlackPowder.pak"], null, "Blackpowder");
+
+        f.Svc.LinkNexus(r.Id, 3, "1.0");
+        var linked = new StateStore(f.P).Load().Single();
+        Assert.Equal(3, linked.NexusModId);
+        Assert.Equal("1.0", linked.NexusVersion);
+
+        f.Svc.LinkNexus(r.Id, null, null);
+        var cleared = new StateStore(f.P).Load().Single();
+        Assert.Null(cleared.NexusModId);
+        Assert.Null(cleared.NexusVersion);
+    }
+
     [Fact] public void Uninstall_DisabledMod_RemovesEmptyModFolders()
     {
         using var f = new Fixture();

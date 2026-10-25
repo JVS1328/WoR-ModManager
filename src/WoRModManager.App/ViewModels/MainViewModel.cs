@@ -1,15 +1,19 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
+using System.Text.Json;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using Microsoft.Win32;
 using WoRModManager.App.Views;
 using WoRModManager.Core;
 using WoRModManager.Core.GitHub;
 using WoRModManager.Core.Import;
 using WoRModManager.Core.Install;
+using WoRModManager.Core.Nexus;
 using WoRModManager.Core.ReShade;
 using WoRModManager.Core.State;
 
@@ -29,6 +33,8 @@ public sealed class MainViewModel : ObservableObject
     readonly GitHubClient gh;
     readonly Downloader dl;
     readonly SelfUpdater updater;
+    readonly NexusClient nexus;
+    IReadOnlyDictionary<int, NexusModInfo> nexusInfo = new Dictionary<int, NexusModInfo>();
     readonly Dictionary<string, (byte[] Bytes, BitmapImage? Image)> thumbs = new(Ci);
     readonly OverlapDetector overlaps = new();
     ModService service = null!;
@@ -44,6 +50,7 @@ public sealed class MainViewModel : ObservableObject
         var handler = GitHubClient.CreateDefaultHandler(); // R2: one allowlisted handler guards API calls and downloads
         gh = new GitHubClient(handler, Path.Combine(DataDir, "HttpCache"));
         dl = new Downloader(handler);
+        nexus = new NexusClient(handler);
         updater = new SelfUpdater(gh, dl, Environment.ProcessPath!, AppVersion);
         RefreshCommand = new RelayCommand(_ => _ = RefreshAsync(), _ => IsIdle);
         UpdateManagerCommand = new RelayCommand(_ => _ = UpdateManagerAsync(), _ => IsIdle && ManagerUpdate is not null);
@@ -128,7 +135,20 @@ public sealed class MainViewModel : ObservableObject
         {
             IsOffline = true;
         }
+        await RefreshNexusAsync(ct);
     });
+
+    // Best effort: if Nexus can't be reached the cards just keep the last known versions.
+    async Task RefreshNexusAsync(CancellationToken ct)
+    {
+        try
+        {
+            var ids = new StateStore(Paths).Load().Select(r => r.NexusModId).OfType<int>().ToList();
+            nexusInfo = await nexus.GetModsAsync(ids, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or JsonException or InvalidDataException
+                                   || (e is TaskCanceledException && !ct.IsCancellationRequested)) { }
+    }
 
     // ModService is not thread-safe: one operation at a time, heavy work off the UI thread, library reloaded after.
     internal async Task<bool> RunAsync(string status, Func<CancellationToken, Task> op, bool reload = true)
@@ -217,6 +237,7 @@ public sealed class MainViewModel : ObservableObject
             if (!old.TryGetValue(key, out var card)) card = new ModCardViewModel(this, key, inLibrary);
             var match = entry is { Status: ModStatus.Unmanaged } ? ModService.MatchOfficial(entry.UnmanagedPaks, catalog) : null;
             card.Update(mod, entry, Thumb(mod ?? match), installedBuild, overlap(entry), match);
+            card.SetNexus(entry?.Record?.NexusModId is int nid && nexusInfo.TryGetValue(nid, out var info) ? info : null);
             var at = cards.IndexOf(card);
             if (at < 0) cards.Insert(i, card);
             else if (at != i) cards.Move(at, i);
@@ -343,13 +364,87 @@ public sealed class MainViewModel : ObservableObject
                 if (!PromptWindow.Ask($"Update {mods.First(m => Ci.Equals(m.Id, a.TargetModId)).Name} ({a.PakNames.Count} files)", "Update")) return;
                 break;
             case ImportKind.AdoptOfficial:
-                if (!PromptWindow.Ask($"Add as official {a.Official!.Name}", "Add")) return;
+                if (!PromptWindow.Ask($"Add as {a.Official!.Name} (Red's Corner)", "Add")) return;
                 break;
         }
         var overwrite = a.Conflicts.Count > 0;
         if (overwrite && !AskOverwrite(a.Conflicts)) return;
         if (IsGameRunning()) throw new GameRunningException(); // ZipImporter doesn't check, and the game may have started meanwhile
-        await Task.Run(() => ZipImporter.Apply(a, path, Paths, mods, name, overwrite), ct);
+        await Task.Run(() =>
+        {
+            var rec = ZipImporter.Apply(a, path, Paths, mods, name, overwrite);
+            MarkNexusCurrent(rec); // an update for a Nexus-linked mod is assumed to be the version Nexus has now
+        }, ct);
+    }
+
+    void MarkNexusCurrent(ModRecord rec)
+    {
+        if (rec.NexusModId is int id && nexusInfo.TryGetValue(id, out var info) && info.Version.Length > 0)
+            service.LinkNexus(rec.Id, id, info.Version);
+    }
+
+    internal async Task LinkNexusAsync(ModCardViewModel card)
+    {
+        var r = card.Record!;
+        var url = PromptWindow.AskText($"Paste the Nexus page link for {r.Name}. The manager will tell you when a newer version is posted there.",
+            "https://www.nexusmods.com/warofrights/mods/", "Link");
+        if (url is null) return;
+        if (!NexusClient.TryParseModUrl(url, out var id))
+        {
+            PromptWindow.Show("That isn't a War of Rights mod page on nexusmods.com. It should look like https://www.nexusmods.com/warofrights/mods/3");
+            return;
+        }
+        await RunAsync("Checking Nexus…", async ct =>
+        {
+            NexusModInfo? info = null;
+            try { (await nexus.GetModsAsync([id], ct)).TryGetValue(id, out info); }
+            catch (Exception e) when (e is HttpRequestException or JsonException || (e is TaskCanceledException && !ct.IsCancellationRequested)) { }
+            if (info is null)
+            {
+                PromptWindow.Show("Couldn't find that mod on Nexus right now. Check the link, or try again later.");
+                return;
+            }
+            nexusInfo = new Dictionary<int, NexusModInfo>(nexusInfo) { [id] = info };
+            // The files you have are taken to be the version Nexus has now; later versions show as updates.
+            await Task.Run(() => service.LinkNexus(r.Id, id, info.Version), ct);
+            PromptWindow.Show($"Linked to '{info.Name}' on Nexus (version {info.Version}). This card will show when a newer version is posted.");
+        });
+    }
+
+    internal Task UnlinkNexusAsync(ModCardViewModel card) =>
+        RunAsync("Unlinking…", ct => Task.Run(() => service.LinkNexus(card.Record!.Id, null, null), ct));
+
+    internal async Task ApplyDownloadedUpdateAsync(ModCardViewModel card)
+    {
+        var d = new OpenFileDialog { Filter = "Mod files (*.zip;*.pak)|*.zip;*.pak", Title = $"Pick the {card.Record!.Name} update you downloaded" };
+        if (d.ShowDialog() != true) return;
+        var target = card.Record;
+        var latest = card.NexusLatestVersion;
+        if (!await RunAsync($"Updating {target.Name}…", ct => ReplaceModAsync(d.FileName, target, latest, ct)))
+            PromptWindow.Show("Wait for the current operation to finish, then try again.");
+    }
+
+    async Task ReplaceModAsync(string path, ModRecord target, string? nexusVersion, CancellationToken ct)
+    {
+        if (IsGameRunning()) throw new GameRunningException();
+        var mods = new StateStore(Paths).Load();
+        var cat = catalog;
+        var a = await Task.Run(() => ZipImporter.Analyze(path, mods, cat, Paths, replaceModId: target.Id), ct);
+        if (a.Kind != ImportKind.UpdateOf)
+        {
+            PromptWindow.Show("No mod files found in this file");
+            return;
+        }
+        if (!PromptWindow.Ask($"Replace {target.Name}'s files with {Path.GetFileName(path)} ({a.PakNames.Count} file{(a.PakNames.Count == 1 ? "" : "s")})?", "Replace"))
+            return;
+        var overwrite = a.Conflicts.Count > 0;
+        if (overwrite && !AskOverwrite(a.Conflicts)) return;
+        if (IsGameRunning()) throw new GameRunningException();
+        await Task.Run(() =>
+        {
+            ZipImporter.Apply(a, path, Paths, mods, null, overwrite);
+            if (target.NexusModId is int id && nexusVersion is { Length: > 0 }) service.LinkNexus(target.Id, id, nexusVersion);
+        }, ct);
     }
 
     static bool AskOverwrite(IEnumerable<string> names) =>

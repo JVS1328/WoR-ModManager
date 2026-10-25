@@ -13,6 +13,8 @@ public class ModRecord
     public string? Version { get; set; }
     public bool Enabled { get; set; }
     public List<string> Paks { get; set; } = [];
+    public int? NexusModId { get; set; }
+    public string? NexusVersion { get; set; } // the Nexus version the installed files match
 
     public string Location(GamePaths p) => Enabled ? p.Assets : p.DisabledDir(Id);
 

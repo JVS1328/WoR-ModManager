@@ -169,6 +169,17 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         store.Save(mods);
     }
 
+    // version = the Nexus version the installed files match (null clears the link). Also shown as the mod's version.
+    public void LinkNexus(string modId, int? nexusModId, string? version)
+    {
+        var mods = store.Load();
+        var r = Find(mods, modId);
+        r.NexusModId = nexusModId;
+        r.NexusVersion = nexusModId is null ? null : version;
+        if (nexusModId is not null && !string.IsNullOrWhiteSpace(version)) r.Version = version;
+        store.Save(mods);
+    }
+
     public void Uninstall(string modId)
     {
         if (isGameRunning()) throw new GameRunningException();

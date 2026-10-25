@@ -16,7 +16,7 @@
             </Button>
             <StackPanel>
                 <TextBlock Text="My Library" Style="{StaticResource Heading}" />
-                <TextBlock Text="Everything installed in the game: official mods, imported mods, and files the manager doesn't own yet." Style="{StaticResource Muted}" Margin="0,2,0,0" />
+                <TextBlock Text="Everything installed in the game: Red's Corner mods, mods you added, and files the manager doesn't own yet." Style="{StaticResource Muted}" Margin="0,2,0,0" />
             </StackPanel>
         </DockPanel>
         <ScrollViewer Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -24,7 +24,7 @@
                           ItemsPanel="{StaticResource CardPanel}" Focusable="False" Margin="24,0,8,8" />
         </ScrollViewer>
         <TextBlock Grid.Row="1" FontSize="13" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="24,40"
-                   Text="Nothing installed yet. Install an official mod, or use + Add mod.">
+                   Text="Nothing installed yet. Install one from Red's Corner, or use + Add mod.">
             <TextBlock.Style>
                 <Style TargetType="TextBlock">
                     <Setter Property="Visibility" Value="Collapsed" />

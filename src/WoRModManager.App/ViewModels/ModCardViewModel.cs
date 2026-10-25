@@ -6,6 +6,7 @@ using System.Text.Json;
 using WoRModManager.Core;
 using WoRModManager.Core.GitHub;
 using WoRModManager.Core.Install;
+using WoRModManager.Core.Nexus;
 using WoRModManager.Core.State;
 
 namespace WoRModManager.App.ViewModels;
@@ -30,6 +31,9 @@ public sealed class ModCardViewModel : ObservableObject
         UninstallCommand = new RelayCommand(_ => _ = owner.UninstallAsync(this), _ => owner.IsIdle && Record is not null);
         ManageOfficialCommand = new RelayCommand(_ => _ = owner.AdoptAsync(this, Match), _ => owner.IsIdle && Match is not null);
         ManageNewCommand = new RelayCommand(_ => _ = owner.AdoptAsync(this, null), _ => owner.IsIdle && IsUnmanaged);
+        LinkNexusCommand = new RelayCommand(_ => _ = owner.LinkNexusAsync(this), _ => owner.IsIdle && CanLinkNexus);
+        UnlinkNexusCommand = new RelayCommand(_ => _ = owner.UnlinkNexusAsync(this), _ => owner.IsIdle && IsNexusLinked);
+        ApplyUpdateCommand = new RelayCommand(_ => _ = owner.ApplyDownloadedUpdateAsync(this), _ => owner.IsIdle && IsNexusLinked);
     }
 
     public string Key { get; }
@@ -46,10 +50,13 @@ public sealed class ModCardViewModel : ObservableObject
     public ICommand UninstallCommand { get; }
     public ICommand ManageOfficialCommand { get; }
     public ICommand ManageNewCommand { get; }
+    public ICommand LinkNexusCommand { get; }
+    public ICommand UnlinkNexusCommand { get; }
+    public ICommand ApplyUpdateCommand { get; }
 
     public bool IsUnmanaged => Entry?.Status == ModStatus.Unmanaged;
     public string Name => IsUnmanaged ? "Unmanaged files" : Record?.Name ?? Official?.Name ?? Key;
-    public string? Version => Record is { } r ? r.Version : Official?.Release?.Tag;
+    public string? Version => Record is { } r ? (r.Version is { } v ? V(v) : null) : Official?.Release?.Tag;
     public Brush Placeholder => Placeholders[Key.Sum(c => c) % Placeholders.Length];
 
     long ReleaseBytes => Official?.Release?.Assets.Where(a => PakNames.IsModPak(a.Name)).Sum(a => a.Size) ?? 0;
@@ -92,15 +99,32 @@ public sealed class ModCardViewModel : ObservableObject
         set { if (Record is { } r && r.Enabled != value) _ = owner.SetEnabledAsync(this, value); }
     }
 
-    public string? NexusUrl => Official?.Description.NexusUrl;
+    public string? NexusUrl => Official?.Description.NexusUrl ?? (Record?.NexusModId is int id ? NexusClient.ModUrl(id) : null);
     public bool HasNexus => NexusUrl is not null;
+
+    // Mods added from a file can be linked to their Nexus page; the manager then checks Nexus for a newer version.
+    NexusModInfo? nexus;
+    public bool CanLinkNexus => Record?.Source == ModSource.Imported && Record.NexusModId is null;
+    public bool IsNexusLinked => Record?.Source == ModSource.Imported && Record.NexusModId is not null;
+    public string? NexusUpdateText => IsNexusLinked && nexus is { Version.Length: > 0 } n && !string.Equals(n.Version, Record!.NexusVersion, StringComparison.OrdinalIgnoreCase)
+        ? $"Update on Nexus: {V(n.Version)}" + (Record.NexusVersion is { Length: > 0 } have ? $" (you have {V(have)})" : "") : null;
+    public bool HasNexusUpdate => NexusUpdateText is not null;
+    internal string? NexusLatestVersion => nexus?.Version;
+    static string V(string v) => v.Length > 0 && char.IsDigit(v[0]) ? "v" + v : v;
+
+    internal void SetNexus(NexusModInfo? info)
+    {
+        nexus = info;
+        OnPropertyChanged(nameof(NexusUpdateText));
+        OnPropertyChanged(nameof(HasNexusUpdate));
+    }
 
     public string? BuildWarning => Official?.GameBuild is { } g && installedBuild is { } b && g != b ? $"Made for game build {g}, you have {b}" : null;
     public bool HasBuildWarning => BuildWarning is not null;
     public bool HasOverlapWarning => OverlapWarning is not null;
 
     public bool HasTag => inLibrary;
-    public string Tag => IsUnmanaged ? "Unmanaged" : Record?.Source == ModSource.Imported ? "Imported" : "Official";
+    public string Tag => IsUnmanaged ? "Unmanaged" : Record?.Source == ModSource.Imported ? "Imported" : "Red's Corner";
     public bool ShowUninstall => inLibrary && Record is not null;
 
     // Unmanaged card

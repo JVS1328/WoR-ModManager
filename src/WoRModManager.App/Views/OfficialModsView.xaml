@@ -15,8 +15,9 @@
                 </StackPanel>
             </Button>
             <StackPanel>
-                <TextBlock Text="Official Mods" Style="{StaticResource Heading}" />
-                <TextBlock Text="Install, update and switch official mods on or off." Style="{StaticResource Muted}" Margin="0,2,0,0" />
+                <TextBlock Text="Red's Corner" Style="{StaticResource Heading}" />
+                <TextBlock Style="{StaticResource Muted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="720" HorizontalAlignment="Left"
+                           Text="Mods made by Red (Discord: jvsr), mostly full-game reskins. Install with one click; updates arrive through the manager automatically and only the changed files download." />
             </StackPanel>
         </DockPanel>
         <ScrollViewer Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -24,7 +25,7 @@
                           ItemsPanel="{StaticResource CardPanel}" Focusable="False" Margin="24,0,8,8" />
         </ScrollViewer>
         <TextBlock Grid.Row="1" FontSize="13" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="24,40"
-                   Text="No official mods to show yet. Check your connection and press Refresh.">
+                   Text="No mods to show yet. Check your connection and press Refresh.">
             <TextBlock.Style>
                 <Style TargetType="TextBlock">
                     <Setter Property="Visibility" Value="Collapsed" />

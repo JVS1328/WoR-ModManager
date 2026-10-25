@@ -61,7 +61,7 @@
                             AutomationProperties.Name="Settings" ToolTip="Settings" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <RadioButton x:Name="OfficialTab" Style="{StaticResource TabButton}" Content="Official Mods" IsChecked="True" GroupName="Tabs" />
+                    <RadioButton x:Name="OfficialTab" Style="{StaticResource TabButton}" Content="Red's Corner" IsChecked="True" GroupName="Tabs" />
                     <RadioButton x:Name="LibraryTab" Style="{StaticResource TabButton}" Content="My Library" GroupName="Tabs" />
                     <RadioButton x:Name="ReShadeTab" Style="{StaticResource TabButton}" Content="ReShade" GroupName="Tabs" />
                 </StackPanel>

@@ -6,15 +6,18 @@ namespace WoRModManager.Core.Import;
 
 public enum ImportKind { NewMod, UpdateOf, AdoptOfficial, ReShadePreset, Nothing }
 
+// ReplaceAll: the target mod's files are swapped for these (its paks missing from the new set are removed).
 public record ImportAnalysis(ImportKind Kind, IReadOnlyList<string> PakNames, string? TargetModId, OfficialMod? Official,
-    string SuggestedName, IReadOnlyList<string> Conflicts);
+    string SuggestedName, IReadOnlyList<string> Conflicts, bool ReplaceAll = false);
 
 public static class ZipImporter
 {
     static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
     const long MaxIniBytes = 1 << 20;
 
-    public static ImportAnalysis Analyze(string path, IReadOnlyList<ModRecord> mods, IReadOnlyList<OfficialMod> official, GamePaths p)
+    // replaceModId: the player chose "apply downloaded update" on that mod, so the file replaces it whatever its pak names are.
+    public static ImportAnalysis Analyze(string path, IReadOnlyList<ModRecord> mods, IReadOnlyList<OfficialMod> official, GamePaths p,
+        string? replaceModId = null)
     {
         List<string> names;
         var preset = false;
@@ -37,6 +40,8 @@ public static class ZipImporter
         }
 
         if (names.Count == 0) return Result(preset ? ImportKind.ReShadePreset : ImportKind.Nothing);
+        if (replaceModId is not null && mods.Any(m => Ci.Equals(m.Id, replaceModId)))
+            return Result(ImportKind.UpdateOf, replaceModId) with { ReplaceAll = true };
         if (ModService.MatchOfficial(names, official) is { } off) return Result(ImportKind.AdoptOfficial, off.Repo.Id, off);
 
         var top = names.Select(n => StateStore.OwnerOf(mods, n)).OfType<ModRecord>().GroupBy(m => m).MaxBy(g => g.Count());
@@ -92,7 +97,8 @@ public static class ZipImporter
             {
                 var loc = r.Location(p);
                 Directory.CreateDirectory(loc);
-                InstallTransaction.Commit(p, loc, names.ToDictionary(n => n, n => staged[n], Ci), []);
+                var remove = a.ReplaceAll && r == rec ? r.Paks.Except(names, Ci).ToList() : [];
+                InstallTransaction.Commit(p, loc, names.ToDictionary(n => n, n => staged[n], Ci), remove);
             }
         }
         finally
@@ -112,7 +118,7 @@ public static class ZipImporter
             var loc = r.Location(p);
             foreach (var m in mods.Where(m => m != r && Ci.Equals(m.Location(p), loc)))
                 m.Paks.RemoveAll(n => names.Contains(n, Ci)); // the overwritten files now belong to r
-            r.Paks = [.. r.Paks.Union(names, Ci)];
+            r.Paks = a.ReplaceAll && r == rec ? [.. names] : [.. r.Paks.Union(names, Ci)];
         }
         new StateStore(p).Save(mods);
         return rec;
