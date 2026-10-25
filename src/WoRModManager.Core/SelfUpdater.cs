@@ -46,7 +46,9 @@ public class SelfUpdater(GitHubClient gh, Downloader dl, string exePath, Version
         }
     }
 
-    static ReleaseAsset? Exe(ReleaseInfo r) => r.Assets.FirstOrDefault(a => a.Name == AssetName && a.Sha256 is not null);
+    // GitHub turns spaces into dots in uploaded file names, so "War.of.Rights.Mod.Manager.exe" is the same asset.
+    static ReleaseAsset? Exe(ReleaseInfo r) =>
+        r.Assets.FirstOrDefault(a => (a.Name == AssetName || a.Name == AssetName.Replace(' ', '.')) && a.Sha256 is not null);
 
     // Missing parts count as 0, so "1.2.3" equals the assembly's "1.2.3.0".
     static Version Full(Version v) => new(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));

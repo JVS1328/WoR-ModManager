@@ -38,6 +38,13 @@ public class SelfUpdaterTests
         Assert.Null(await Updater(Release("v1.1.0", name: "Other.exe"), new Version(1, 0, 0, 0), out _).CheckAsync(default));
     }
 
+    [Fact] public async Task Check_GitHubDottedAssetName_ReturnsRelease()
+    {
+        // GitHub swaps spaces for dots when the exe is uploaded
+        var r = await Updater(Release("v1.1.0", name: "War.of.Rights.Mod.Manager.exe"), new Version(1, 0, 0, 0), out _).CheckAsync(default);
+        Assert.Equal("v1.1.0", r!.Tag);
+    }
+
     [Fact] public async Task Check_SameVersion_ReturnsNull()
     {
         // the assembly reports 4 parts, tags usually 3 (and the reverse must not loop either)
