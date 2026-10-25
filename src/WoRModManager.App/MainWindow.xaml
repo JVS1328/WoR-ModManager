@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:WoRModManager.App.Views"
         Style="{StaticResource AppWindow}" Title="War of Rights Mod Manager"
-        Width="1040" Height="720" MinWidth="680" MinHeight="480" WindowStartupLocation="CenterScreen"
+        Width="1040" Height="720" MinWidth="720" MinHeight="480" WindowStartupLocation="CenterScreen"
         AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
     <Grid>
         <Grid.RowDefinitions>
@@ -77,6 +77,7 @@
         <Grid Grid.Row="4">
             <views:OfficialModsView Visibility="{Binding IsChecked, ElementName=OfficialTab, Converter={StaticResource BoolToVis}}" />
             <views:LibraryView Visibility="{Binding IsChecked, ElementName=LibraryTab, Converter={StaticResource BoolToVis}}" />
+            <views:ReShadeView DataContext="{Binding ReShade}" Visibility="{Binding IsChecked, ElementName=ReShadeTab, Converter={StaticResource BoolToVis}}" />
         </Grid>
 
         <!-- Status line -->

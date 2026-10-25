@@ -15,9 +15,27 @@
             <Button Content="Browse…" Style="{StaticResource GhostButton}" Click="BrowseGame_Click" Margin="8,0,0,0" />
         </StackPanel>
 
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
-            <Button x:Name="ContinueButton" Content="Continue" IsDefault="True" Click="Continue_Click" MinWidth="80" IsEnabled="False" Visibility="Collapsed" />
-            <Button x:Name="CloseButton" Content="Close" IsCancel="True" Style="{StaticResource GhostButton}" MinWidth="80" Margin="8,0,0,0" />
+        <StackPanel x:Name="ManagedSection">
+            <TextBlock Text="Mods folder" FontWeight="SemiBold" Margin="0,22,0,2" />
+            <TextBlock Text="Where the manager keeps disabled mods, downloads, backups and its records." Style="{StaticResource Muted}" Margin="0,0,0,6" />
+            <TextBox x:Name="ModsFolder" IsReadOnly="True" AutomationProperties.Name="Mods folder" />
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <Button Content="Browse…" Style="{StaticResource GhostButton}" Click="BrowseMods_Click" AutomationProperties.Name="Browse for Mods folder" />
+                <Button Content="Reset to default" Style="{StaticResource GhostButton}" Click="ResetMods_Click" Margin="8,0,0,0" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Margin="0,22,0,0">
+                <Button Content="Open game folder" Style="{StaticResource GhostButton}" Click="OpenGame_Click" />
+                <Button Content="Open Mods folder" Style="{StaticResource GhostButton}" Click="OpenMods_Click" Margin="8,0,0,0" />
+            </StackPanel>
         </StackPanel>
+
+        <DockPanel Margin="0,24,0,0">
+            <TextBlock x:Name="VersionText" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="ContinueButton" Content="Continue" IsDefault="True" Click="Continue_Click" MinWidth="80" IsEnabled="False" Visibility="Collapsed" />
+                <Button x:Name="CloseButton" Content="Close" IsCancel="True" Style="{StaticResource GhostButton}" MinWidth="80" Margin="8,0,0,0" />
+            </StackPanel>
+        </DockPanel>
     </StackPanel>
 </Window>

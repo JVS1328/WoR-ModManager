@@ -22,7 +22,7 @@ public sealed class ModCardViewModel : ObservableObject
         Key = key;
         PrimaryCommand = new RelayCommand(_ => _ = owner.InstallAsync(this), _ => owner.IsIdle && CanPrimary);
         CancelCommand = new RelayCommand(_ => owner.Cancel(), _ => IsDownloading);
-        NexusCommand = new RelayCommand(_ => MainViewModel.OpenUrl(NexusUrl!), _ => NexusUrl is not null);
+        NexusCommand = new RelayCommand(_ => MainViewModel.ShellOpen(NexusUrl!), _ => NexusUrl is not null);
         DetailsCommand = new RelayCommand(_ => owner.ShowDetails(this));
         UninstallCommand = new RelayCommand(_ => _ = owner.UninstallAsync(this), _ => owner.IsIdle && Record is not null);
         ManageOfficialCommand = new RelayCommand(_ => _ = owner.AdoptAsync(this, Match), _ => owner.IsIdle && Match is not null);

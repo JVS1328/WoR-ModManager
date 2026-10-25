@@ -17,10 +17,12 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         App.UseDarkTitleBar(this);
         this.vm = vm;
+        VersionText.Text = $"War of Rights Mod Manager {MainViewModel.AppVersion.ToString(3)}";
         if (firstRun)
         {
             Title = Heading.Text = "Find War of Rights";
             Intro.Visibility = ContinueButton.Visibility = Visibility.Visible;
+            ManagedSection.Visibility = Visibility.Collapsed;
             CloseButton.Content = "Quit";
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
         }
@@ -34,7 +36,11 @@ public partial class SettingsWindow : Window
         return w.ShowDialog() == true ? w.pickedRoot : null;
     }
 
-    void Refresh() => GameFolder.Text = vm?.Paths.GameRoot ?? pickedRoot ?? "";
+    void Refresh()
+    {
+        GameFolder.Text = vm?.Paths.GameRoot ?? pickedRoot ?? "";
+        ModsFolder.Text = vm?.Paths.ModsFolder ?? "";
+    }
 
     void Detect_Click(object sender, RoutedEventArgs e)
     {
@@ -64,6 +70,24 @@ public partial class SettingsWindow : Window
         }
         Refresh();
     }
+
+    void BrowseMods_Click(object sender, RoutedEventArgs e)
+    {
+        var d = new OpenFolderDialog { Title = "Choose an empty folder for the manager's files" };
+        if (d.ShowDialog(this) == true) _ = UseModsFolderAsync(d.FolderName);
+    }
+
+    void ResetMods_Click(object sender, RoutedEventArgs e) => _ = UseModsFolderAsync(GamePaths.DefaultModsFolder(vm!.Paths.GameRoot));
+
+    async Task UseModsFolderAsync(string folder)
+    {
+        await vm!.ChangeModsFolderAsync(folder);
+        Refresh();
+    }
+
+    void OpenGame_Click(object sender, RoutedEventArgs e) => MainViewModel.ShellOpen(vm!.Paths.GameRoot);
+
+    void OpenMods_Click(object sender, RoutedEventArgs e) => MainViewModel.ShellOpen(vm!.Paths.ModsFolder);
 
     void Continue_Click(object sender, RoutedEventArgs e) => DialogResult = true;
 }

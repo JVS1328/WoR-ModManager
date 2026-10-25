@@ -46,11 +46,13 @@ public sealed class MainViewModel : ObservableObject
         updater = new SelfUpdater(gh, dl, Environment.ProcessPath!, AppVersion);
         RefreshCommand = new RelayCommand(_ => _ = RefreshAsync(), _ => IsIdle);
         UpdateManagerCommand = new RelayCommand(_ => _ = UpdateManagerAsync(), _ => IsIdle && ManagerUpdate is not null);
+        ReShade = new ReShadeViewModel(this);
         Paths = paths;
         Load(paths);
     }
 
     public GamePaths Paths { get; private set; }
+    public ReShadeViewModel ReShade { get; }
     public ObservableCollection<ModCardViewModel> Official { get; } = [];
     public ObservableCollection<ModCardViewModel> Library { get; } = [];
     public ICommand RefreshCommand { get; }
@@ -88,7 +90,7 @@ public sealed class MainViewModel : ObservableObject
 
     public static bool IsGameRunning() => Process.GetProcessesByName("WarOfRights").Length > 0;
 
-    public static void OpenUrl(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+    public static void ShellOpen(string target) => Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();
 
     void Load(GamePaths p)
     {
@@ -189,6 +191,7 @@ public sealed class MainViewModel : ObservableObject
         Sync(Official, false, catalog.Select(m => (m.Repo.Id, (OfficialMod?)m,
             library.FirstOrDefault(e => e.Record is { Source: ModSource.Official } r && Ci.Equals(r.RepoId, m.Repo.Id)))), OverlapText);
         Sync(Library, true, library.Select(e => (e.Record?.Id ?? "unmanaged", e.Official, (LibraryEntry?)e)), OverlapText);
+        ReShade.Reload(reshade);
         CommandManager.InvalidateRequerySuggested();
     }
 
@@ -350,6 +353,27 @@ public sealed class MainViewModel : ObservableObject
         SettingsStore.Save(SettingsFile, new AppSettings(root, mods));
         Load(new GamePaths(root, mods));
     });
+
+    internal async Task ChangeModsFolderAsync(string folder)
+    {
+        if (SamePath(folder, Paths.ModsFolder)) return;
+        if (IsBusy)
+        {
+            PromptWindow.Show("Wait for the current operation to finish, then try again.");
+            return;
+        }
+        var next = new GamePaths(Paths.GameRoot, folder);
+        if (!next.SameDrive && !PromptWindow.Ask(
+                "This folder is on a different drive than the game, so enabling and disabling mods will copy files instead of being instant.", "Continue"))
+            return;
+        var from = Paths.ModsFolder;
+        await RunAsync("Moving the Mods folder…", async ct =>
+        {
+            await Task.Run(() => ModsFolderMover.Move(from, folder), ct);
+            SettingsStore.Save(SettingsFile, new AppSettings(next.GameRoot, folder));
+            Load(next);
+        });
+    }
 
     internal static bool SamePath(string a, string b) =>
         Ci.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)));

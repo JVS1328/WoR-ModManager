@@ -1,0 +1,86 @@
+<UserControl x:Class="WoRModManager.App.Views.ReShadeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="Panel" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Width" Value="640" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Margin" Value="0,0,0,16" />
+            <Setter Property="Padding" Value="20,16" />
+        </Style>
+    </UserControl.Resources>
+    <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24,20,24,16">
+            <TextBlock Text="ReShade" Style="{StaticResource Heading}" />
+            <TextBlock Text="Switch ReShade on or off and choose a preset. The manager only touches its own preset folders." Style="{StaticResource Muted}" Margin="0,2,0,16" />
+
+            <!-- Not installed -->
+            <Border Style="{StaticResource Panel}" Visibility="{Binding IsNotInstalled, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <TextBlock TextWrapping="Wrap" LineHeight="20"
+                               Text="ReShade isn't installed. Download it from reshade.me, run the installer, pick bin\win_x64\WarOfRights.exe and choose DirectX 10/11/12." />
+                    <Button Content="Open reshade.me" Command="{Binding OpenSiteCommand}" HorizontalAlignment="Left" Margin="0,14,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- Installed -->
+            <StackPanel Visibility="{Binding IsInstalled, Converter={StaticResource BoolToVis}}">
+                <Border Style="{StaticResource Panel}">
+                    <DockPanel>
+                        <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding IsOn, Mode=TwoWay}"
+                                  IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=Window}}"
+                                  AutomationProperties.Name="ReShade on" />
+                        <StackPanel>
+                            <TextBlock Text="ReShade overlay" FontWeight="SemiBold" />
+                            <TextBlock Text="Off starts the game without ReShade. Your presets and settings stay." Style="{StaticResource Muted}" Margin="0,2,16,0" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <Border Style="{StaticResource Panel}">
+                    <StackPanel>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Import preset" Command="{Binding ImportCommand}" Style="{StaticResource GhostButton}" VerticalAlignment="Center" />
+                            <TextBlock Text="Active preset" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}" DisplayMemberPath="Name"
+                                  Margin="0,10,0,0" MinHeight="32" AutomationProperties.Name="Active preset"
+                                  IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=Window}}" />
+                        <TextBlock Text="{Binding ActivePresetText}" Style="{StaticResource Muted}" Margin="0,6,0,0" />
+
+                        <TextBlock Text="Imported presets" FontWeight="SemiBold" Margin="0,18,0,6" />
+                        <TextBlock Text="None yet. Import a preset zip, or drop one onto the window.">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasPresets}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <ItemsControl ItemsSource="{Binding Presets}" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="0,8">
+                                        <DockPanel>
+                                            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Content="Delete" VerticalAlignment="Center"
+                                                    Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}"
+                                                    AutomationProperties.Name="{Binding Name, StringFormat=Delete preset {0}}" />
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" />
+                                                <TextBlock Text="{Binding MissingText}" Foreground="{StaticResource AmberBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                           Visibility="{Binding HasMissing, Converter={StaticResource BoolToVis}}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
