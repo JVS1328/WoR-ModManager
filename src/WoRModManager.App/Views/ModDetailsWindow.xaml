@@ -39,9 +39,22 @@
                 <TextBox Text="{Binding Blurb, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0"
                          AutomationProperties.Name="Description" />
 
-                <TextBlock Text="Changelog" FontWeight="SemiBold" Margin="0,20,0,6" />
-                <TextBox Text="{Binding Changelog, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
-                         Padding="10,8" AutomationProperties.Name="Changelog" />
+                <StackPanel Visibility="{Binding HasHistorySection, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Version history" FontWeight="SemiBold" Margin="0,20,0,6" />
+                    <TextBlock Text="{Binding HistoryStatus}" Style="{StaticResource Muted}" TextWrapping="Wrap"
+                               Visibility="{Binding HasHistoryStatus, Converter={StaticResource BoolToVis}}" />
+                    <ItemsControl ItemsSource="{Binding History}" Focusable="False" AutomationProperties.Name="Version history">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,14">
+                                    <TextBlock Text="{Binding Header}" Foreground="{StaticResource GoldBrush}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                    <TextBox Text="{Binding Notes, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
+                                             Padding="10,8" AutomationProperties.Name="{Binding Header}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
 

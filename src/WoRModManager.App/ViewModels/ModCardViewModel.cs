@@ -1,7 +1,10 @@
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Net.Http;
+using System.Text.Json;
 using WoRModManager.Core;
+using WoRModManager.Core.GitHub;
 using WoRModManager.Core.Install;
 using WoRModManager.Core.State;
 
@@ -115,6 +118,32 @@ public sealed class ModCardViewModel : ObservableObject
         : "No game build listed";
     public bool CanUninstall => Record is not null;
 
+    // Version history: every published release with its date and changelog, fetched when the details open.
+    public bool HasHistorySection => Official is not null;
+    IReadOnlyList<HistoryItem> history = [];
+    public IReadOnlyList<HistoryItem> History { get => history; private set => Set(ref history, value); }
+    string historyStatus = "";
+    public string HistoryStatus { get => historyStatus; private set { if (Set(ref historyStatus, value)) OnPropertyChanged(nameof(HasHistoryStatus)); } }
+    public bool HasHistoryStatus => historyStatus.Length > 0;
+
+    internal async Task LoadHistoryAsync(GitHubClient gh)
+    {
+        if (Official is null) return;
+        HistoryStatus = "Loading…";
+        try
+        {
+            var releases = await gh.GetReleaseHistoryAsync(Official.Repo, CancellationToken.None);
+            History = releases.Select(r => new HistoryItem(
+                r.Published is { } d ? $"{r.Tag} · {d.LocalDateTime:MMMM d, yyyy}" : r.Tag,
+                r.Notes.Length > 0 ? r.Notes : "No changelog published.")).ToList();
+            HistoryStatus = History.Count == 0 ? "No releases published yet." : "";
+        }
+        catch (Exception e) when (e is GitHubUnavailableException or HttpRequestException or JsonException or InvalidOperationException)
+        {
+            HistoryStatus = "Couldn't load the version history from GitHub. Latest changelog:\n" + Changelog;
+        }
+    }
+
     double progress;
     public double Progress { get => progress; private set => Set(ref progress, value); }
     string progressText = "";
@@ -150,3 +179,5 @@ public sealed class ModCardViewModel : ObservableObject
         return b;
     }
 }
+
+public sealed record HistoryItem(string Header, string Notes);

@@ -17,6 +17,25 @@ public class GitHubClientTests
     private static readonly RepoRef Repo = new("JVS1328", "WoR-MAW-releases");
     private const string Rel = """{"tag_name":"v1","body":"n","assets":[]}""";
 
+    [Fact] public async Task GetReleaseHistory_NewestFirst_SkipsDraftsAndPrereleases()
+    {
+        var stub = new StubHttpHandler(req =>
+        {
+            Assert.Equal("https://api.github.com/repos/JVS1328/WoR-MAW-releases/releases?per_page=100", req.RequestUri!.ToString());
+            return Json(200, """
+              [{"tag_name":"v1.3.5","body":"test","draft":false,"prerelease":true,"published_at":"2026-10-26T10:00:00Z"},
+               {"tag_name":"v1.3.4","body":"MAW 1.3.4\n- icons","draft":false,"prerelease":false,"published_at":"2026-10-25T09:30:00Z"},
+               {"tag_name":"v9","body":"wip","draft":true,"prerelease":false,"published_at":null},
+               {"tag_name":"v1.3.3","body":null,"draft":false,"prerelease":false,"published_at":"2026-10-24T12:00:00Z"}]
+            """);
+        });
+        var h = await new GitHubClient(stub, TempDir()).GetReleaseHistoryAsync(Repo, default);
+        Assert.Equal(new[] { "v1.3.4", "v1.3.3" }, h.Select(x => x.Tag));
+        Assert.Equal(new DateTimeOffset(2026, 10, 25, 9, 30, 0, TimeSpan.Zero), h[0].Published);
+        Assert.Equal("MAW 1.3.4\n- icons", h[0].Notes);
+        Assert.Equal("", h[1].Notes);
+    }
+
     [Fact] public async Task GetLatestRelease_ParsesAssetsAndDigest()
     {
         var stub = new StubHttpHandler(_ => Json(200, """

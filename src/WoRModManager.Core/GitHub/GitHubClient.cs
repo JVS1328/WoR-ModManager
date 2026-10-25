@@ -45,6 +45,21 @@ public class GitHubClient
         return new ReleaseInfo(Str(root, "tag_name"), Str(root, "body"), assets, r.FromCache);
     }
 
+    // Published releases, newest first (GitHub's order). The notes are the release's changelog.txt.
+    public async Task<IReadOnlyList<ReleaseHistoryEntry>> GetReleaseHistoryAsync(RepoRef repo, CancellationToken ct)
+    {
+        var r = await FetchAsync($"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/releases?per_page=100", api: true, int.MaxValue, ct);
+        if (r.Body is null) return [];
+        using var doc = JsonDocument.Parse(r.Body);
+        return doc.RootElement.EnumerateArray()
+            .Where(e => !Flag(e, "draft") && !Flag(e, "prerelease"))
+            .Select(e => new ReleaseHistoryEntry(Str(e, "tag_name"),
+                DateTimeOffset.TryParse(Str(e, "published_at"), out var d) ? d : null, Str(e, "body").Trim()))
+            .ToList();
+    }
+
+    private static bool Flag(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+
     public async Task<string?> GetRawTextAsync(RepoRef repo, string path, CancellationToken ct) =>
         await GetRawBytesAsync(repo, path, ct) is { } b ? Encoding.UTF8.GetString(b) : null;
 

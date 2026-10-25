@@ -362,8 +362,11 @@ public sealed class MainViewModel : ObservableObject
         return RunAsync($"Uninstalling {r.Name}…", ct => Task.Run(() => service.Uninstall(r.Id), ct));
     }
 
-    internal void ShowDetails(ModCardViewModel card) =>
+    internal void ShowDetails(ModCardViewModel card)
+    {
+        _ = card.LoadHistoryAsync(gh); // fills in while the dialog is open (ShowDialog keeps pumping the dispatcher)
         new ModDetailsWindow { DataContext = card, Owner = Application.Current.MainWindow }.ShowDialog();
+    }
 
     Task UpdateManagerAsync() => RunAsync("Downloading the manager update…", async ct =>
     {
