@@ -9,7 +9,8 @@ public class AllowlistHandler : DelegatingHandler
     {
         "api.github.com", "github.com", "raw.githubusercontent.com",
         "objects.githubusercontent.com", "release-assets.githubusercontent.com",
-        "api.nexusmods.com", // version checks for mods linked to a Nexus page; nothing is downloaded from Nexus
+        "api.nexusmods.com", // mod info for mods linked to a Nexus page; no mod files are downloaded from Nexus
+        "staticdelivery.nexusmods.com", // those mods' pictures
     };
     private const int MaxHops = 5;
 

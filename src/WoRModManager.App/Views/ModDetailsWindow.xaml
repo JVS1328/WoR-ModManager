@@ -23,10 +23,16 @@
 
         <ScrollViewer Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="24,18,24,18">
-                <TextBlock Text="{Binding Name}" Style="{StaticResource Heading}" />
+                <Grid>
+                    <TextBlock Text="{Binding Name}" Style="{StaticResource Heading}" Visibility="{Binding NoNexus, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Style="{StaticResource Heading}" Visibility="{Binding HasNexus, Converter={StaticResource BoolToVis}}">
+                        <Hyperlink Style="{StaticResource TitleLink}" Command="{Binding NexusCommand}"><Run Text="{Binding Name, Mode=OneWay}" /></Hyperlink>
+                    </TextBlock>
+                </Grid>
                 <TextBlock Text="{Binding Meta}" Style="{StaticResource Muted}" Margin="0,2,0,0" />
                 <TextBlock Text="{Binding StatusText}" Margin="0,8,0,0" />
-                <TextBlock Text="{Binding GameBuildText}" Style="{StaticResource Muted}" Margin="0,4,0,0" />
+                <TextBlock Text="{Binding GameBuildText}" Style="{StaticResource Muted}" Margin="0,4,0,0"
+                           Visibility="{Binding HasGameBuild, Converter={StaticResource BoolToVis}}" />
                 <Border Style="{StaticResource Warning}" Visibility="{Binding HasBuildWarning, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="{Binding BuildWarning}" Foreground="{StaticResource AmberBrush}" TextWrapping="Wrap" />
                 </Border>

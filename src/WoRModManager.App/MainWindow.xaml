@@ -54,6 +54,14 @@
                                         </StackPanel>
                                     </MenuItem.Header>
                                 </MenuItem>
+                                <MenuItem Click="AddFromNexus_Click" AutomationProperties.Name="From a Nexus link">
+                                    <MenuItem.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="From a Nexus link" FontWeight="SemiBold" />
+                                            <TextBlock Text="Paste the mod's page; download it there, then pick the file" Style="{StaticResource Muted}" />
+                                        </StackPanel>
+                                    </MenuItem.Header>
+                                </MenuItem>
                             </ContextMenu>
                         </Button.ContextMenu>
                     </Button>

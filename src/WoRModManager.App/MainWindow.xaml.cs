@@ -34,6 +34,8 @@ public partial class MainWindow : Window
         if (d.ShowDialog(this) == true) _ = Vm.AddFilesAsync(d.FileNames);
     }
 
+    void AddFromNexus_Click(object sender, RoutedEventArgs e) => _ = Vm.AddFromNexusLinkAsync();
+
     static string[] ModFiles(DragEventArgs e) => e.Data.GetData(DataFormats.FileDrop) is string[] files
         ? [.. files.Where(f => f.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".pak", StringComparison.OrdinalIgnoreCase))]
         : [];

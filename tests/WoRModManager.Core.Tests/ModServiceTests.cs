@@ -450,6 +450,35 @@ public class ModServiceTests
         Assert.Null(cleared.NexusVersion);
     }
 
+    [Fact] public void LinkNexus_WithName_TakesTheNexusName()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("zBlackPowder.pak", B("a"));
+        var r = f.Svc.Adopt(["zBlackPowder.pak"], null, "zBlackPowder");
+        f.Svc.LinkNexus(r.Id, 3, "1.0", "Blackpowder - Enhanced Smoke Visuals");
+        Assert.Equal("Blackpowder - Enhanced Smoke Visuals", new StateStore(f.P).Load().Single().Name);
+    }
+
+    [Fact] public void AddFromNexus_CreatesWaitingModWithNoFiles_OncePerNexusMod()
+    {
+        using var f = new Fixture();
+        var r = f.Svc.AddFromNexus(3, "Blackpowder - Enhanced Smoke Visuals");
+        Assert.Equal(ModSource.Imported, r.Source);
+        Assert.Empty(r.Paks);
+        Assert.Equal(3, r.NexusModId);
+        Assert.Null(r.NexusVersion); // nothing downloaded yet
+        Assert.Equal(r.Id, f.Svc.AddFromNexus(3, "again").Id);
+        Assert.Single(new StateStore(f.P).Load());
+    }
+
+    [Fact] public async Task Refresh_WaitingNexusMod_IsNotMissingFiles()
+    {
+        using var f = new Fixture();
+        f.Svc.AddFromNexus(3, "Blackpowder");
+        var e = Assert.Single(await f.Svc.RefreshLibraryAsync([], default));
+        Assert.Equal(ModStatus.UpToDate, e.Status);
+    }
+
     [Fact] public void Uninstall_DisabledMod_RemovesEmptyModFolders()
     {
         using var f = new Fixture();

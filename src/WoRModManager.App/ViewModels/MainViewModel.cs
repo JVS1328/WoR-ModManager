@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
@@ -35,6 +36,7 @@ public sealed class MainViewModel : ObservableObject
     readonly SelfUpdater updater;
     readonly NexusClient nexus;
     IReadOnlyDictionary<int, NexusModInfo> nexusInfo = new Dictionary<int, NexusModInfo>();
+    readonly Dictionary<string, BitmapImage?> nexusPictures = new(Ci); // by picture URL, fetched once per run
     readonly Dictionary<string, (byte[] Bytes, BitmapImage? Image)> thumbs = new(Ci);
     readonly OverlapDetector overlaps = new();
     ModService service = null!;
@@ -139,12 +141,19 @@ public sealed class MainViewModel : ObservableObject
     });
 
     // Best effort: if Nexus can't be reached the cards just keep the last known versions.
+    async Task FetchNexusPicturesAsync(CancellationToken ct)
+    {
+        foreach (var url in nexusInfo.Values.Select(i => i.PictureUrl).OfType<string>().Where(u => !nexusPictures.ContainsKey(u)).ToList())
+            nexusPictures[url] = await nexus.GetImageAsync(url, ct) is { } bytes ? Decode(bytes) : null;
+    }
+
     async Task RefreshNexusAsync(CancellationToken ct)
     {
         try
         {
             var ids = new StateStore(Paths).Load().Select(r => r.NexusModId).OfType<int>().ToList();
             nexusInfo = await nexus.GetModsAsync(ids, ct);
+            await FetchNexusPicturesAsync(ct);
         }
         catch (Exception e) when (e is HttpRequestException or JsonException or InvalidDataException
                                    || (e is TaskCanceledException && !ct.IsCancellationRequested)) { }
@@ -237,7 +246,8 @@ public sealed class MainViewModel : ObservableObject
             if (!old.TryGetValue(key, out var card)) card = new ModCardViewModel(this, key, inLibrary);
             var match = entry is { Status: ModStatus.Unmanaged } ? ModService.MatchOfficial(entry.UnmanagedPaks, catalog) : null;
             card.Update(mod, entry, Thumb(mod ?? match), installedBuild, overlap(entry), match);
-            card.SetNexus(entry?.Record?.NexusModId is int nid && nexusInfo.TryGetValue(nid, out var info) ? info : null);
+            var info = entry?.Record?.NexusModId is int nid && nexusInfo.TryGetValue(nid, out var ni) ? ni : null;
+            card.SetNexus(info, info?.PictureUrl is { } pic && nexusPictures.TryGetValue(pic, out var img) ? img : null);
             var at = cards.IndexOf(card);
             if (at < 0) cards.Insert(i, card);
             else if (at != i) cards.Move(at, i);
@@ -346,6 +356,20 @@ public sealed class MainViewModel : ObservableObject
         var cat = catalog;
         var a = await Task.Run(() => ZipImporter.Analyze(path, mods, cat, Paths), ct);
         string? name = null;
+        (int ModId, string Version)? hit = null;
+        if (a.Kind is ImportKind.NewMod or ImportKind.UpdateOf)
+        {
+            StatusText = "Checking the file with Nexus…";
+            hit = await IdentifyOnNexusAsync(path, ct);
+            // a download of a mod already in My Library (linked to Nexus) replaces it, whatever its files are called
+            if (hit is { } h && mods.FirstOrDefault(m => m.NexusModId == h.ModId) is { } linked)
+            {
+                await ReplaceModAsync(path, linked, h.Version, null, ct);
+                return;
+            }
+            if (hit is { } found && await TryNexusInfoAsync(found.ModId, ct) is { } info)
+                a = a with { SuggestedName = info.Name };
+        }
         switch (a.Kind)
         {
             case ImportKind.Nothing:
@@ -373,7 +397,9 @@ public sealed class MainViewModel : ObservableObject
         await Task.Run(() =>
         {
             var rec = ZipImporter.Apply(a, path, Paths, mods, name, overwrite);
-            MarkNexusCurrent(rec); // an update for a Nexus-linked mod is assumed to be the version Nexus has now
+            if (hit is { } h && rec.Source == ModSource.Imported && rec.NexusModId is null)
+                service.LinkNexus(rec.Id, h.ModId, h.Version, nexusInfo.TryGetValue(h.ModId, out var ni) ? ni.Name : null);
+            else MarkNexusCurrent(rec); // an update for a Nexus-linked mod is assumed to be the version Nexus has now
         }, ct);
     }
 
@@ -405,10 +431,70 @@ public sealed class MainViewModel : ObservableObject
                 return;
             }
             nexusInfo = new Dictionary<int, NexusModInfo>(nexusInfo) { [id] = info };
+            await FetchNexusPicturesAsync(ct);
             // The files you have are taken to be the version Nexus has now; later versions show as updates.
-            await Task.Run(() => service.LinkNexus(r.Id, id, info.Version), ct);
+            await Task.Run(() => service.LinkNexus(r.Id, id, info.Version, info.Name), ct);
             PromptWindow.Show($"Linked to '{info.Name}' on Nexus (version {info.Version}). This card will show when a newer version is posted.");
         });
+    }
+
+    public async Task AddFromNexusLinkAsync()
+    {
+        var url = PromptWindow.AskText("Paste the mod's Nexus page link. It's added to My Library; download it on Nexus, then pick the file on its card.",
+            "https://www.nexusmods.com/warofrights/mods/", "Add");
+        if (url is null) return;
+        if (!NexusClient.TryParseModUrl(url, out var id))
+        {
+            PromptWindow.Show("That isn't a War of Rights mod page on nexusmods.com. It should look like https://www.nexusmods.com/warofrights/mods/3");
+            return;
+        }
+        var openPage = false;
+        await RunAsync("Checking Nexus…", async ct =>
+        {
+            var info = await TryNexusInfoAsync(id, ct);
+            if (info is null)
+            {
+                PromptWindow.Show("Couldn't find that mod on Nexus right now. Check the link, or try again later.");
+                return;
+            }
+            if (new StateStore(Paths).Load().FirstOrDefault(m => m.NexusModId == id) is { } existing)
+            {
+                PromptWindow.Show($"{existing.Name} is already in My Library.");
+                return;
+            }
+            await FetchNexusPicturesAsync(ct);
+            await Task.Run(() => service.AddFromNexus(id, info.Name), ct);
+            openPage = PromptWindow.Ask($"Added '{info.Name}' to My Library. Download it on Nexus now? When it's downloaded, press 'Pick downloaded file…' on its card, or drop the file on this window.", "Open Nexus");
+        });
+        if (openPage) ShellOpen(NexusClient.FilesUrl(id));
+    }
+
+    async Task<NexusModInfo?> TryNexusInfoAsync(int id, CancellationToken ct)
+    {
+        try
+        {
+            if ((await nexus.GetModsAsync([id], ct)).TryGetValue(id, out var info))
+            {
+                nexusInfo = new Dictionary<int, NexusModInfo>(nexusInfo) { [id] = info };
+                return info;
+            }
+        }
+        catch (Exception e) when (e is HttpRequestException or JsonException || (e is TaskCanceledException && !ct.IsCancellationRequested)) { }
+        return null;
+    }
+
+    // Asks Nexus which mod and version a downloaded file is, by its MD5. Null if Nexus doesn't know it or can't be reached.
+    async Task<(int ModId, string Version)?> IdentifyOnNexusAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            var md5 = await Task.Run(() => { using var s = File.OpenRead(path); return Convert.ToHexStringLower(MD5.HashData(s)); }, ct);
+            return await nexus.IdentifyAsync(md5, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or JsonException or IOException || (e is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            return null;
+        }
     }
 
     internal Task UnlinkNexusAsync(ModCardViewModel card) =>
@@ -420,13 +506,24 @@ public sealed class MainViewModel : ObservableObject
         if (d.ShowDialog() != true) return;
         var target = card.Record;
         var latest = card.NexusLatestVersion;
-        if (!await RunAsync($"Updating {target.Name}…", ct => ReplaceModAsync(d.FileName, target, latest, ct)))
+        if (!await RunAsync($"Updating {target.Name}…", ct => ReplaceModAsync(d.FileName, target, null, latest, ct)))
             PromptWindow.Show("Wait for the current operation to finish, then try again.");
     }
 
-    async Task ReplaceModAsync(string path, ModRecord target, string? nexusVersion, CancellationToken ct)
+    // knownVersion: already identified by the file's hash; otherwise it's looked up here, falling back to Nexus's latest version.
+    async Task ReplaceModAsync(string path, ModRecord target, string? knownVersion, string? fallbackVersion, CancellationToken ct)
     {
         if (IsGameRunning()) throw new GameRunningException();
+        var nexusVersion = knownVersion;
+        if (nexusVersion is null && target.NexusModId is int linkedId)
+        {
+            StatusText = "Checking the file with Nexus…";
+            var hit = await IdentifyOnNexusAsync(path, ct);
+            if (hit is { } h && h.ModId != linkedId && !PromptWindow.Ask(
+                    $"Nexus says this file belongs to a different mod (#{h.ModId}), not {target.Name}. Use it for {target.Name} anyway?", "Use it"))
+                return;
+            nexusVersion = hit is { } same && same.ModId == linkedId ? same.Version : fallbackVersion;
+        }
         var mods = new StateStore(Paths).Load();
         var cat = catalog;
         var a = await Task.Run(() => ZipImporter.Analyze(path, mods, cat, Paths, replaceModId: target.Id), ct);
@@ -435,7 +532,10 @@ public sealed class MainViewModel : ObservableObject
             PromptWindow.Show("No mod files found in this file");
             return;
         }
-        if (!PromptWindow.Ask($"Replace {target.Name}'s files with {Path.GetFileName(path)} ({a.PakNames.Count} file{(a.PakNames.Count == 1 ? "" : "s")})?", "Replace"))
+        var fresh = target.Paks.Count == 0;
+        var files = $"{a.PakNames.Count} file{(a.PakNames.Count == 1 ? "" : "s")}" + (nexusVersion is { Length: > 0 } nv ? $", version {nv}" : "");
+        if (!PromptWindow.Ask(fresh ? $"Install {target.Name} from {Path.GetFileName(path)} ({files})?"
+                                    : $"Replace {target.Name}'s files with {Path.GetFileName(path)} ({files})?", fresh ? "Install" : "Replace"))
             return;
         var overwrite = a.Conflicts.Count > 0;
         if (overwrite && !AskOverwrite(a.Conflicts)) return;
@@ -453,13 +553,14 @@ public sealed class MainViewModel : ObservableObject
     internal Task UninstallAsync(ModCardViewModel card)
     {
         var r = card.Record!;
-        if (IsBusy || !PromptWindow.Ask($"Delete {r.Paks.Count} files of {r.Name} from the game?", "Delete")) return Task.CompletedTask;
+        var question = r.Paks.Count == 0 ? $"Remove {r.Name} from My Library?" : $"Delete {r.Paks.Count} files of {r.Name} from the game?";
+        if (IsBusy || !PromptWindow.Ask(question, r.Paks.Count == 0 ? "Remove" : "Delete")) return Task.CompletedTask;
         return RunAsync($"Uninstalling {r.Name}…", ct => Task.Run(() => service.Uninstall(r.Id), ct));
     }
 
     internal void ShowDetails(ModCardViewModel card)
     {
-        _ = card.LoadHistoryAsync(gh); // fills in while the dialog is open (ShowDialog keeps pumping the dispatcher)
+        _ = card.LoadHistoryAsync(gh, nexus); // fills in while the dialog is open (ShowDialog keeps pumping the dispatcher)
         new ModDetailsWindow { DataContext = card, Owner = Application.Current.MainWindow }.ShowDialog();
     }
 

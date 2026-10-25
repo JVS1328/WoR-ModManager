@@ -95,6 +95,19 @@
         <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="Padding" Value="6,6" />
     </Style>
+    <!-- A mod name that opens its Nexus page: looks like a title, underlines on hover -->
+    <Style x:Key="TitleLink" TargetType="Hyperlink">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="TextDecorations" Value="{x:Null}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="ToolTip" Value="Open on Nexus" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource GoldBrush}" />
+                <Setter Property="TextDecorations" Value="Underline" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
     <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
@@ -436,7 +449,14 @@
                         <Border DockPanel.Dock="Right" Style="{StaticResource Tag}" Visibility="{Binding HasTag, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="{Binding Tag}" FontSize="10" Foreground="{StaticResource MutedBrush}" />
                         </Border>
-                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <Grid>
+                            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       Visibility="{Binding NoNexus, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       Visibility="{Binding HasNexus, Converter={StaticResource BoolToVis}}">
+                                <Hyperlink Style="{StaticResource TitleLink}" Command="{Binding NexusCommand}"><Run Text="{Binding Name, Mode=OneWay}" /></Hyperlink>
+                            </TextBlock>
+                        </Grid>
                     </DockPanel>
                     <TextBlock Text="{Binding Meta}" Style="{StaticResource Muted}" Margin="0,2,0,0" />
                     <TextBlock Text="{Binding StatusText}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" />
@@ -475,10 +495,12 @@
                                     Visibility="{Binding HasManageOfficial, Converter={StaticResource BoolToVis}}" />
                             <Button Content="Manage as new mod" Command="{Binding ManageNewCommand}"
                                     Visibility="{Binding HasManageNew, Converter={StaticResource BoolToVis}}" />
-                            <Button Style="{StaticResource CardPrimaryButton}" Content="Apply downloaded update…" Command="{Binding ApplyUpdateCommand}" Margin="0,0,8,6"
-                                    Visibility="{Binding HasNexusUpdate, Converter={StaticResource BoolToVis}}"
+                            <Button Style="{StaticResource CardPrimaryButton}" Content="Download on Nexus" Command="{Binding DownloadNexusCommand}" Margin="0,0,8,6"
+                                    Visibility="{Binding IsWaiting, Converter={StaticResource BoolToVis}}" ToolTip="Opens the mod's Files tab on Nexus" />
+                            <Button Style="{StaticResource CardPrimaryButton}" Content="{Binding ApplyUpdateText}" Command="{Binding ApplyUpdateCommand}" Margin="0,0,8,6"
+                                    Visibility="{Binding ShowApplyUpdate, Converter={StaticResource BoolToVis}}"
                                     ToolTip="Pick the zip or .pak you downloaded from Nexus; it replaces this mod's files" />
-                            <Button Content="Uninstall" Command="{Binding UninstallCommand}"
+                            <Button Content="{Binding UninstallText}" Command="{Binding UninstallCommand}"
                                     Visibility="{Binding ShowUninstall, Converter={StaticResource BoolToVis}}" />
                             <Button Content="Link Nexus page" Command="{Binding LinkNexusCommand}"
                                     Visibility="{Binding CanLinkNexus, Converter={StaticResource BoolToVis}}"

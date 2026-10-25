@@ -34,6 +34,7 @@ public sealed class ModCardViewModel : ObservableObject
         LinkNexusCommand = new RelayCommand(_ => _ = owner.LinkNexusAsync(this), _ => owner.IsIdle && CanLinkNexus);
         UnlinkNexusCommand = new RelayCommand(_ => _ = owner.UnlinkNexusAsync(this), _ => owner.IsIdle && IsNexusLinked);
         ApplyUpdateCommand = new RelayCommand(_ => _ = owner.ApplyDownloadedUpdateAsync(this), _ => owner.IsIdle && IsNexusLinked);
+        DownloadNexusCommand = new RelayCommand(_ => MainViewModel.ShellOpen(NexusClient.FilesUrl(Record!.NexusModId!.Value)), _ => IsNexusLinked);
     }
 
     public string Key { get; }
@@ -53,9 +54,10 @@ public sealed class ModCardViewModel : ObservableObject
     public ICommand LinkNexusCommand { get; }
     public ICommand UnlinkNexusCommand { get; }
     public ICommand ApplyUpdateCommand { get; }
+    public ICommand DownloadNexusCommand { get; }
 
     public bool IsUnmanaged => Entry?.Status == ModStatus.Unmanaged;
-    public string Name => IsUnmanaged ? "Unmanaged files" : Record?.Name ?? Official?.Name ?? Key;
+    public string Name => IsUnmanaged ? "Unmanaged files" : (IsNexusLinked && nexus is { Name.Length: > 0 } n ? n.Name : Record?.Name) ?? Official?.Name ?? Key;
     public string? Version => Record is { } r ? (r.Version is { } v ? V(v) : null) : Official?.Release?.Tag;
     public Brush Placeholder => Placeholders[Key.Sum(c => c) % Placeholders.Length];
 
@@ -64,10 +66,11 @@ public sealed class ModCardViewModel : ObservableObject
     public string Meta => string.Join(" · ", new[]
     {
         Version,
+        IsNexusLinked && nexus is { Author.Length: > 0 } n ? $"by {n.Author}" : null,
         ReleaseBytes > 0 ? Mb(ReleaseBytes) : FileCount > 0 ? $"{FileCount} file{(FileCount == 1 ? "" : "s")}" : null,
     }.OfType<string>());
 
-    public string StatusText => Entry?.Status switch
+    public string StatusText => IsWaiting ? "Not downloaded yet. Get it from Nexus, then pick the downloaded file here." : Entry?.Status switch
     {
         null => Official?.Release is null ? "No release published yet" : "Not installed",
         ModStatus.UpToDate => Record?.Source == ModSource.Imported || Official is null ? "Installed" : "Up to date",
@@ -92,7 +95,7 @@ public sealed class ModCardViewModel : ObservableObject
     public bool ShowPrimary => inLibrary ? CanPrimary && Entry is not null : Entry?.Status is not ModStatus.FilesMissing;
     public bool IsUpdate => Entry?.Status == ModStatus.UpdateAvailable;
 
-    public bool ShowToggle => Record is not null;
+    public bool ShowToggle => Record is not null && !IsWaiting;
     public bool IsEnabled
     {
         get => Record?.Enabled ?? false;
@@ -101,22 +104,28 @@ public sealed class ModCardViewModel : ObservableObject
 
     public string? NexusUrl => Official?.Description.NexusUrl ?? (Record?.NexusModId is int id ? NexusClient.ModUrl(id) : null);
     public bool HasNexus => NexusUrl is not null;
+    public bool NoNexus => !HasNexus;
 
     // Mods added from a file can be linked to their Nexus page; the manager then checks Nexus for a newer version.
     NexusModInfo? nexus;
     public bool CanLinkNexus => Record?.Source == ModSource.Imported && Record.NexusModId is null;
     public bool IsNexusLinked => Record?.Source == ModSource.Imported && Record.NexusModId is not null;
-    public string? NexusUpdateText => IsNexusLinked && nexus is { Version.Length: > 0 } n && !string.Equals(n.Version, Record!.NexusVersion, StringComparison.OrdinalIgnoreCase)
+    // Added from its Nexus link and not downloaded yet: no files to manage, only "download" and "pick the file".
+    public bool IsWaiting => IsNexusLinked && Record!.Paks.Count == 0;
+    public bool ShowApplyUpdate => HasNexusUpdate || IsWaiting;
+    public string ApplyUpdateText => IsWaiting ? "Pick downloaded file…" : "Apply downloaded update…";
+    public string UninstallText => IsWaiting ? "Remove" : "Uninstall";
+    public string? NexusUpdateText => IsNexusLinked && !IsWaiting && nexus is { Version.Length: > 0 } n && !string.Equals(n.Version, Record!.NexusVersion, StringComparison.OrdinalIgnoreCase)
         ? $"Update on Nexus: {V(n.Version)}" + (Record.NexusVersion is { Length: > 0 } have ? $" (you have {V(have)})" : "") : null;
     public bool HasNexusUpdate => NexusUpdateText is not null;
     internal string? NexusLatestVersion => nexus?.Version;
     static string V(string v) => v.Length > 0 && char.IsDigit(v[0]) ? "v" + v : v;
 
-    internal void SetNexus(NexusModInfo? info)
+    internal void SetNexus(NexusModInfo? info, BitmapImage? picture)
     {
         nexus = info;
-        OnPropertyChanged(nameof(NexusUpdateText));
-        OnPropertyChanged(nameof(HasNexusUpdate));
+        if (Official is null && picture is not null) Thumbnail = picture;
+        OnPropertyChanged(string.Empty);
     }
 
     public string? BuildWarning => Official?.GameBuild is { } g && installedBuild is { } b && g != b ? $"Made for game build {g}, you have {b}" : null;
@@ -135,7 +144,10 @@ public sealed class ModCardViewModel : ObservableObject
     public bool HasManageNew => IsUnmanaged && Match is null; // never compete with a matching official mod
 
     // Details window
-    public string Blurb => Official?.Description.Blurb is { Length: > 0 } b ? b : "No description.";
+    string? nexusAbout;
+    public string Blurb => Official?.Description.Blurb is { Length: > 0 } b ? b
+        : nexusAbout ?? (nexus is { Summary.Length: > 0 } n ? n.Summary : "No description.");
+    public bool HasGameBuild => Official is not null;
     public string Changelog => Official?.Changelog is { Length: > 0 } c ? c.Trim() : "No changelog published.";
     public string GameBuildText => Official?.GameBuild is { } g
         ? $"Made for game build {g}" + (installedBuild is { } b ? $" (you have {b})" : "")
@@ -143,16 +155,20 @@ public sealed class ModCardViewModel : ObservableObject
     public bool CanUninstall => Record is not null;
 
     // Version history: every published release with its date and changelog, fetched when the details open.
-    public bool HasHistorySection => Official is not null;
+    public bool HasHistorySection => Official is not null || IsNexusLinked;
     IReadOnlyList<HistoryItem> history = [];
     public IReadOnlyList<HistoryItem> History { get => history; private set => Set(ref history, value); }
     string historyStatus = "";
     public string HistoryStatus { get => historyStatus; private set { if (Set(ref historyStatus, value)) OnPropertyChanged(nameof(HasHistoryStatus)); } }
     public bool HasHistoryStatus => historyStatus.Length > 0;
 
-    internal async Task LoadHistoryAsync(GitHubClient gh)
+    internal async Task LoadHistoryAsync(GitHubClient gh, NexusClient nexusClient)
     {
-        if (Official is null) return;
+        if (Official is null)
+        {
+            if (IsNexusLinked) await LoadNexusDetailsAsync(nexusClient);
+            return;
+        }
         HistoryStatus = "Loading…";
         try
         {
@@ -165,6 +181,24 @@ public sealed class ModCardViewModel : ObservableObject
         catch (Exception e) when (e is GitHubUnavailableException or HttpRequestException or JsonException or InvalidOperationException)
         {
             HistoryStatus = "Couldn't load the version history from GitHub. Latest changelog:\n" + Changelog;
+        }
+    }
+
+    async Task LoadNexusDetailsAsync(NexusClient nexusClient)
+    {
+        HistoryStatus = "Loading from Nexus…";
+        try
+        {
+            var d = await nexusClient.GetDetailsAsync(Record!.NexusModId!.Value, CancellationToken.None);
+            if (d.Description.Length > 0) nexusAbout = d.Description;
+            OnPropertyChanged(nameof(Blurb));
+            History = d.Versions.Select(v => new HistoryItem($"{V(v.Version)} · {v.Date.LocalDateTime:MMMM d, yyyy}",
+                v.Changelog.Count > 0 ? string.Join("\n", v.Changelog.Select(l => "• " + l.Trim())) : "No changelog posted.")).ToList();
+            HistoryStatus = History.Count == 0 ? "No files posted on Nexus yet." : "";
+        }
+        catch (Exception e) when (e is HttpRequestException or JsonException or InvalidOperationException or TaskCanceledException)
+        {
+            HistoryStatus = "Couldn't load the description and version history from Nexus right now.";
         }
     }
 

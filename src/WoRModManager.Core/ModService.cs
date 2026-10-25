@@ -170,14 +170,26 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     }
 
     // version = the Nexus version the installed files match (null clears the link). Also shown as the mod's version.
-    public void LinkNexus(string modId, int? nexusModId, string? version)
+    public void LinkNexus(string modId, int? nexusModId, string? version, string? nexusName = null)
     {
         var mods = store.Load();
         var r = Find(mods, modId);
         r.NexusModId = nexusModId;
         r.NexusVersion = nexusModId is null ? null : version;
         if (nexusModId is not null && !string.IsNullOrWhiteSpace(version)) r.Version = version;
+        if (nexusModId is not null && !string.IsNullOrWhiteSpace(nexusName)) r.Name = nexusName.Trim();
         store.Save(mods);
+    }
+
+    // A mod added from its Nexus link before its file is downloaded: no paks yet, filled in when the download is picked.
+    public ModRecord AddFromNexus(int nexusModId, string name)
+    {
+        var mods = store.Load();
+        if (mods.FirstOrDefault(m => m.NexusModId == nexusModId) is { } existing) return existing;
+        var r = new ModRecord { Id = ModRecord.ImportedId(name, mods), Name = name.Trim(), Source = ModSource.Imported, Enabled = true, NexusModId = nexusModId };
+        mods.Add(r);
+        store.Save(mods);
+        return r;
     }
 
     public void Uninstall(string modId)
