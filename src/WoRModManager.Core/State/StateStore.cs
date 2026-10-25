@@ -20,6 +20,6 @@ public class StateStore(GamePaths paths)
         File.Move(tmp, paths.StateFile, overwrite: true);
     }
 
-    public ModRecord? OwnerOf(IEnumerable<ModRecord> mods, string pakName) =>
+    public static ModRecord? OwnerOf(IEnumerable<ModRecord> mods, string pakName) =>
         mods.FirstOrDefault(m => m.Paks.Contains(pakName, StringComparer.OrdinalIgnoreCase));
 }

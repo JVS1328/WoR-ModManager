@@ -80,7 +80,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
 
         var unmanaged = Directory.Exists(paths.Assets)
             ? Directory.EnumerateFiles(paths.Assets, "z*.pak").Select(Path.GetFileName).OfType<string>()
-                .Where(n => PakNames.IsModPak(n) && store.OwnerOf(mods, n) is null).Order(Ci).ToList()
+                .Where(n => PakNames.IsModPak(n) && StateStore.OwnerOf(mods, n) is null).Order(Ci).ToList()
             : [];
         if (unmanaged.Count > 0) entries.Add(new(null, null, ModStatus.Unmanaged, null, false, unmanaged));
         return entries;
@@ -172,7 +172,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     {
         if (pakNames.Count == 0 || !pakNames.All(PakNames.IsModPak)) throw new ArgumentException("Only z*.pak files can be adopted.");
         var mods = store.Load();
-        if (pakNames.Select(n => store.OwnerOf(mods, n)).FirstOrDefault(o => o is not null) is { } owner)
+        if (pakNames.Select(n => StateStore.OwnerOf(mods, n)).FirstOrDefault(o => o is not null) is { } owner)
             throw new InvalidOperationException($"Already managed by {owner.Name}.");
         var r = asOfficial is not null
             ? new ModRecord { Id = asOfficial.Repo.Id, Name = asOfficial.Name, Source = ModSource.Official, RepoId = asOfficial.Repo.Id }

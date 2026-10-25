@@ -24,8 +24,8 @@ public class StateStoreTests : IDisposable
     [Fact] public void OwnerOf_IsCaseInsensitive()
     {
         var mods = new List<ModRecord> { new() { Id = "x", Name = "X", Paks = ["z_X.pak"] } };
-        Assert.Same(mods[0], new StateStore(game.Paths).OwnerOf(mods, "Z_x.PAK"));
-        Assert.Null(new StateStore(game.Paths).OwnerOf(mods, "other.pak"));
+        Assert.Same(mods[0], StateStore.OwnerOf(mods, "Z_x.PAK"));
+        Assert.Null(StateStore.OwnerOf(mods, "other.pak"));
     }
 
     [Fact] public void Location_FollowsEnabled()
@@ -34,5 +34,13 @@ public class StateStoreTests : IDisposable
         Assert.Equal(game.Paths.Assets, m.Location(game.Paths));
         m.Enabled = false;
         Assert.Equal(game.Paths.DisabledDir("a/b"), m.Location(game.Paths));
+    }
+
+    [Fact] public void ImportedId_SlugsAndDeduplicates()
+    {
+        Assert.Equal("imported/my-cool-mod", ModRecord.ImportedId("  My Cool_Mod!! ", []));
+        Assert.Equal("imported/mod", ModRecord.ImportedId("!!!", []));
+        ModRecord[] existing = [new() { Id = "imported/maw" }, new() { Id = "Imported/MAW-2" }];
+        Assert.Equal("imported/maw-3", ModRecord.ImportedId("MAW", existing));
     }
 }
