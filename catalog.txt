@@ -1,0 +1,8 @@
+# Official Mods list for the WoR Mod Manager.
+# One mod per line: its public GitHub releases repo. Line order = card order.
+# Add a line to add a mod, delete it to remove one. '#' lines are ignored.
+
+https://github.com/JVS1328/WoR-MAW-releases
+
+# War of 1812: uncomment once its first release is published.
+# https://github.com/JVS1328/WoR-1812-releases
