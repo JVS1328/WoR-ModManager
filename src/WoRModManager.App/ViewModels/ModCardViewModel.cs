@@ -34,6 +34,7 @@ public sealed class ModCardViewModel : ObservableObject
         LinkNexusCommand = new RelayCommand(_ => _ = owner.LinkNexusAsync(this), _ => owner.IsIdle && CanLinkNexus);
         UnlinkNexusCommand = new RelayCommand(_ => _ = owner.UnlinkNexusAsync(this), _ => owner.IsIdle && IsNexusLinked);
         ApplyUpdateCommand = new RelayCommand(_ => _ = owner.ApplyDownloadedUpdateAsync(this), _ => owner.IsIdle && IsNexusLinked);
+        RemoveLeftoversCommand = new RelayCommand(_ => _ = owner.RemoveLeftoversAsync(this), _ => owner.IsIdle && Leftover is not null);
         DownloadNexusCommand = new RelayCommand(_ => MainViewModel.ShellOpen(NexusClient.FilesUrl(Record!.NexusModId!.Value)), _ => IsNexusLinked);
     }
 
@@ -55,6 +56,7 @@ public sealed class ModCardViewModel : ObservableObject
     public ICommand UnlinkNexusCommand { get; }
     public ICommand ApplyUpdateCommand { get; }
     public ICommand DownloadNexusCommand { get; }
+    public ICommand RemoveLeftoversCommand { get; }
 
     public bool IsUnmanaged => Entry?.Status == ModStatus.Unmanaged;
     public string Name => IsUnmanaged ? "Unmanaged files" : (IsNexusLinked && nexus is { Name.Length: > 0 } n ? n.Name : Record?.Name) ?? Official?.Name ?? Key;
@@ -77,6 +79,7 @@ public sealed class ModCardViewModel : ObservableObject
         ModStatus.UpdateAvailable => "Update available",
         ModStatus.Repair => "Some files are changed or missing",
         ModStatus.FilesMissing => "Files missing",
+        ModStatus.Unmanaged when Leftover is { } lo => $"Left over from an older {lo.Name} version. They're not in the current version but still change the game.",
         ModStatus.Unmanaged => "Mod files in the game that the manager doesn't own yet. Nothing changes until you choose.",
         _ => "",
     };
@@ -141,7 +144,9 @@ public sealed class ModCardViewModel : ObservableObject
     public OfficialMod? Match { get; private set; }
     public string ManageOfficialText => Match is { } m ? $"Manage as {m.Name}" : "";
     public bool HasManageOfficial => Match is not null;
-    public bool HasManageNew => IsUnmanaged && Match is null; // never compete with a matching official mod
+    public bool HasManageNew => IsUnmanaged && Match is null && Leftover is null; // never compete with a matching official mod
+    public OfficialMod? Leftover { get; private set; }
+    public bool HasLeftover => Leftover is not null;
 
     // Details window
     string? nexusAbout;
@@ -209,9 +214,11 @@ public sealed class ModCardViewModel : ObservableObject
     bool isDownloading;
     public bool IsDownloading { get => isDownloading; set { if (Set(ref isDownloading, value)) { Progress = 0; ProgressText = ""; } } }
 
-    internal void Update(OfficialMod? official, LibraryEntry? entry, BitmapImage? thumbnail, string? build, string? overlapWarning, OfficialMod? match)
+    internal void Update(OfficialMod? official, LibraryEntry? entry, BitmapImage? thumbnail, string? build, string? overlapWarning, OfficialMod? match,
+        OfficialMod? leftover = null)
     {
         Match = match;
+        Leftover = leftover;
         Official = official;
         Entry = entry;
         Thumbnail = thumbnail;

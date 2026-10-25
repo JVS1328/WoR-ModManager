@@ -5,7 +5,7 @@ A single-exe, Steam-Workshop-style mod manager for War of Rights. Players instal
 ## Build and publish the exe
 
 ```powershell
-.\publish.ps1     # -> publish\War of Rights Mod Manager.exe (self-contained, single file)
+.\publish.ps1     # -> publish\WoRModManager.exe (self-contained, single file), the Nexus zip, and publish\legacy\
 dotnet test       # Core tests
 ```
 
@@ -13,7 +13,10 @@ dotnet test       # Core tests
 
 1. Bump `<Version>` in `src/WoRModManager.App/WoRModManager.App.csproj` (e.g. `1.1.0`).
 2. Run `.\publish.ps1`.
-3. On `JVS1328/WoR-ModManager`, create a release tagged `vX.Y.Z` (same number as `<Version>`) and attach `War of Rights Mod Manager.exe`.
+3. On `JVS1328/WoR-ModManager`, create a release tagged `vX.Y.Z` (same number as `<Version>`) and attach `publish\WoRModManager.exe`,
+   `publish\WoR-Mod-Manager-vX.Y.Z.zip`, and `publish\legacy\War of Rights Mod Manager.exe` (the same exe under the 1.0.x name, so copies
+   still on 1.0.x can update themselves; drop it once nobody is on 1.0.x).
+4. Upload the zip to Nexus for new downloads.
 
 Running managers see the new tag and show an "update available" bar.
 

@@ -18,10 +18,10 @@ public class SelfUpdaterTests
         gh = new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(releaseJson, Encoding.UTF8, "application/json") });
         var dl = new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(NewExe) });
         return new SelfUpdater(new GitHubClient(gh, Directory.CreateTempSubdirectory("wormm-gh").FullName), new Downloader(dl),
-            Path.Combine(Dir, "War of Rights Mod Manager.exe"), current, start);
+            Path.Combine(Dir, "WoRModManager.exe"), current, start);
     }
 
-    static string Release(string tag, string name = "War of Rights Mod Manager.exe", bool digest = true) => $$"""
+    static string Release(string tag, string name = "WoRModManager.exe", bool digest = true) => $$"""
         {"tag_name":"{{tag}}","body":"","assets":[{"name":"{{name}}","size":{{NewExe.Length}},
           {{(digest ? $"\"digest\":\"sha256:{Sha}\"," : "")}}
           "browser_download_url":"https://github.com/JVS1328/WoR-ModManager/releases/download/{{tag}}/x.exe"}]}
@@ -37,6 +37,11 @@ public class SelfUpdaterTests
         Assert.Equal("https://api.github.com/repos/JVS1328/WoR-ModManager/releases/latest", gh.Requests.Single().RequestUri!.ToString());
         Assert.Null(await Updater(Release("v1.1.0", name: "Other.exe"), new Version(1, 0, 0, 0), out _).CheckAsync(default));
     }
+
+    [Theory]
+    [InlineData("War of Rights Mod Manager.exe")]  // the 1.0.x name
+    public async Task Check_OldAssetName_StillAccepted(string name) =>
+        Assert.Equal("v1.1.0", (await Updater(Release("v1.1.0", name: name), new Version(1, 0, 0, 0), out _).CheckAsync(default))!.Tag);
 
     [Fact] public async Task Check_GitHubDottedAssetName_ReturnsRelease()
     {
@@ -58,7 +63,7 @@ public class SelfUpdaterTests
 
     [Fact] public async Task Apply_SwapsFiles()
     {
-        var exe = Path.Combine(Dir, "War of Rights Mod Manager.exe");
+        var exe = Path.Combine(Dir, "WoRModManager.exe");
         File.WriteAllText(exe, "MZ old build");
         string? started = null;
         var u = Updater(Release("v2.0.0"), new Version(1, 0, 0, 0), out _, p => started = p);

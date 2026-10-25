@@ -202,6 +202,7 @@ public sealed class MainViewModel : ObservableObject
         var cat = catalog;
         var paths = Paths;
         var svc = service;
+        IReadOnlyList<ModRecord> adopted = [];
         (library, var found) = await Task.Run(async () =>
         {
             if (recoverPending)
@@ -209,6 +210,7 @@ public sealed class MainViewModel : ObservableObject
                 svc.RecoverIfNeeded(); // an interrupted install is undone before anything reads or writes the game
                 recoverPending = false;
             }
+            adopted = svc.AdoptExistingInstalls(cat);
             var lib = await svc.RefreshLibraryAsync(cat, CancellationToken.None);
             return (lib, overlaps.Find([.. Records(lib).Where(r => r.Enabled)], paths));
         });
@@ -229,6 +231,15 @@ public sealed class MainViewModel : ObservableObject
         Sync(Library, true, library.Select(e => (e.Record?.Id ?? "unmanaged:" + e.UnmanagedPaks[0], e.Official, (LibraryEntry?)e)), OverlapText);
         ReShade.Reload(reshade);
         CommandManager.InvalidateRequerySuggested();
+        if (adopted.Count > 0) ShowAdopted(adopted);
+    }
+
+    void ShowAdopted(IReadOnlyList<ModRecord> adopted)
+    {
+        var lines = adopted.Select(r => library.FirstOrDefault(e => e.Record?.Id == r.Id) is { } e
+            ? $"{r.Name}: " + (e.Status == ModStatus.UpToDate ? "up to date" : $"{e.Plan?.ToDownload.Count ?? 0} file(s) out of date, update it from Red's Corner")
+            : r.Name);
+        PromptWindow.Show("Found mods you installed before the manager. They're managed here now and kept up to date:\n\n" + string.Join("\n", lines));
     }
 
     static IEnumerable<ModRecord> Records(IEnumerable<LibraryEntry> lib) => lib.Select(e => e.Record).OfType<ModRecord>();
@@ -245,7 +256,8 @@ public sealed class MainViewModel : ObservableObject
         {
             if (!old.TryGetValue(key, out var card)) card = new ModCardViewModel(this, key, inLibrary);
             var match = entry is { Status: ModStatus.Unmanaged } ? ModService.MatchOfficial(entry.UnmanagedPaks, catalog) : null;
-            card.Update(mod, entry, Thumb(mod ?? match), installedBuild, overlap(entry), match);
+            var leftover = entry is { Status: ModStatus.Unmanaged } && match is null ? ModService.LeftoverOf(entry.UnmanagedPaks, catalog, Records(library)) : null;
+            card.Update(mod, entry, Thumb(mod ?? match ?? leftover), installedBuild, overlap(entry), match, leftover);
             var info = entry?.Record?.NexusModId is int nid && nexusInfo.TryGetValue(nid, out var ni) ? ni : null;
             card.SetNexus(info, info?.PictureUrl is { } pic && nexusPictures.TryGetValue(pic, out var img) ? img : null);
             var at = cards.IndexOf(card);
@@ -549,6 +561,14 @@ public sealed class MainViewModel : ObservableObject
 
     static bool AskOverwrite(IEnumerable<string> names) =>
         PromptWindow.Ask($"These files already exist and will be overwritten:\n\n{string.Join("\n", names)}", "Overwrite");
+
+    internal Task RemoveLeftoversAsync(ModCardViewModel card)
+    {
+        var names = card.Entry!.UnmanagedPaks;
+        if (IsBusy || !PromptWindow.Ask($"Delete these files left over from an older {card.Leftover!.Name} version? They're not part of the current version but still change the game.\n\n{string.Join("\n", names)}", "Delete"))
+            return Task.CompletedTask;
+        return RunAsync("Removing leftover files…", ct => Task.Run(() => service.RemoveUnmanaged(names), ct));
+    }
 
     internal Task UninstallAsync(ModCardViewModel card)
     {

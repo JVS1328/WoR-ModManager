@@ -69,6 +69,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         var mods = store.Load();
         var build = SteamLocator.ReadBuildId(paths.GameRoot);
         var entries = new List<LibraryEntry>();
+        var versionFound = false;
         foreach (var r in mods.Where(IsSafe)) // a damaged record is left alone rather than hiding the whole library
         {
             var loc = Location(r);
@@ -79,11 +80,17 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
             {
                 plan = await PlanAsync(r, rel, loc, ct);
                 status = plan.IsEmpty ? ModStatus.UpToDate : r.Version == rel.Tag ? ModStatus.Repair : ModStatus.UpdateAvailable;
+                if (plan.IsEmpty && r.Version is null) // adopted files that match the latest release exactly: that's the installed version
+                {
+                    r.Version = rel.Tag;
+                    versionFound = true;
+                }
             }
             else status = r.Paks.All(p => File.Exists(Path.Combine(loc, p))) ? ModStatus.UpToDate : ModStatus.FilesMissing;
             entries.Add(new(r, off, status, plan, off?.GameBuild is { } g && build is not null && g != build, []));
         }
         hashes.Save();
+        if (versionFound) store.Save(mods);
 
         var unmanaged = Directory.Exists(paths.Assets)
             ? Directory.EnumerateFiles(paths.Assets, "z*.pak").Select(Path.GetFileName).OfType<string>()
@@ -225,6 +232,45 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         mods.Add(r);
         store.Save(mods);
         return r;
+    }
+
+    // Players who installed a Red's Corner mod by hand before the manager: its paks are taken over as that mod (no file is touched),
+    // and the next refresh compares them with the latest release. Paks the release doesn't have stay unmanaged.
+    public IReadOnlyList<ModRecord> AdoptExistingInstalls(IReadOnlyList<OfficialMod> official)
+    {
+        if (official.Count == 0 || !Directory.Exists(paths.Assets)) return [];
+        var mods = store.Load();
+        var unmanaged = Directory.EnumerateFiles(paths.Assets, "z*.pak").Select(Path.GetFileName).OfType<string>()
+            .Where(n => PakNames.IsModPak(n) && StateStore.OwnerOf(mods, n) is null).ToList();
+        var adopted = new List<ModRecord>();
+        foreach (var g in unmanaged.GroupBy(n => PakNames.Prefix(n) ?? n, Ci))
+            if (MatchOfficial([.. g], official) is { } o && !mods.Any(m => Ci.Equals(m.Id, o.Repo.Id)))
+            {
+                adopted.Add(Adopt([.. g], o, null));
+                mods = store.Load();
+            }
+        return adopted;
+    }
+
+    // Unmanaged paks left behind by an older version of an installed official mod: same prefix, but not in its latest release.
+    public static OfficialMod? LeftoverOf(IReadOnlyList<string> pakNames, IReadOnlyList<OfficialMod> official, IEnumerable<ModRecord> mods)
+    {
+        if (pakNames.Select(PakNames.Prefix).Distinct(Ci).ToList() is not [{ } prefix]) return null;
+        var installed = mods.Where(m => m.Source == ModSource.Official).Select(m => m.RepoId).ToHashSet(Ci);
+        return official.FirstOrDefault(o => installed.Contains(o.Repo.Id)
+            && ReleasePaks(o) is var rel && !pakNames.Any(n => rel.Contains(n, Ci))
+            && rel.Select(PakNames.Prefix).Distinct(Ci).ToList() is [{ } rp] && Ci.Equals(rp, prefix));
+    }
+
+    // Deletes mod paks in Assets that no mod owns (the player confirmed). Never vanilla files, never another mod's files.
+    public void RemoveUnmanaged(IReadOnlyList<string> pakNames)
+    {
+        if (isGameRunning()) throw new GameRunningException();
+        if (!pakNames.All(PakNames.IsModPak)) throw new ArgumentException("Only z*.pak mod files can be removed.");
+        var mods = store.Load();
+        if (pakNames.Select(n => StateStore.OwnerOf(mods, n)).FirstOrDefault(o => o is not null) is { } owner)
+            throw new InvalidOperationException($"{owner.Name} manages that file; uninstall it instead.");
+        foreach (var n in pakNames) File.Delete(Path.Combine(paths.Assets, n));
     }
 
     public static OfficialMod? MatchOfficial(IReadOnlyList<string> pakNames, IReadOnlyList<OfficialMod> official)

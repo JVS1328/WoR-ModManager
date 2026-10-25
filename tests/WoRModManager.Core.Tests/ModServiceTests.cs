@@ -269,6 +269,78 @@ public class ModServiceTests
         Assert.Equal(["z_maw_Mine.pak"], Assert.Single(lib, e => e.Status == ModStatus.Unmanaged).UnmanagedPaks);
     }
 
+    [Fact] public async Task AdoptExisting_MatchingInstall_UpToDateWithReleaseVersion()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("z_maw_A.pak", B("aaa"));
+        f.G.WritePak("z_maw_B.pak", B("bbb"));
+        var maw = f.Release("v1.3.5", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb"));
+
+        var adopted = f.Svc.AdoptExistingInstalls([maw]);
+
+        Assert.Equal(["MAW"], adopted.Select(r => r.Name));
+        var e = Assert.Single(await f.Svc.RefreshLibraryAsync([maw], default));
+        Assert.Equal(ModStatus.UpToDate, e.Status);
+        Assert.Equal("v1.3.5", new StateStore(f.P).Load().Single().Version); // matching files mean that version is installed
+        Assert.Equal("aaa", File.ReadAllText(f.Asset("z_maw_A.pak"))); // nothing touched
+    }
+
+    [Fact] public async Task AdoptExisting_OlderInstall_OffersOnlyTheChangedPaks()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("z_maw_A.pak", B("aaa"));
+        f.G.WritePak("z_maw_B.pak", B("old"));
+        var maw = f.Release("v1.3.5", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "new"));
+
+        f.Svc.AdoptExistingInstalls([maw]);
+
+        var e = Assert.Single(await f.Svc.RefreshLibraryAsync([maw], default));
+        Assert.Equal(ModStatus.UpdateAvailable, e.Status);
+        Assert.Equal(["z_maw_B.pak"], e.Plan!.ToDownload.Select(a => a.Name));
+        Assert.Null(new StateStore(f.P).Load().Single().Version);
+    }
+
+    [Fact] public void AdoptExisting_LeavesOtherFilesAndAlreadyManagedModsAlone()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("zBlackPowder.pak", B("bp"));
+        f.G.WritePak("z_maw_A.pak", B("aaa"));
+        var maw = f.Release("v1", ("z_maw_A.pak", "aaa"));
+        Assert.Single(f.Svc.AdoptExistingInstalls([maw]));
+        Assert.Empty(f.Svc.AdoptExistingInstalls([maw])); // second launch: nothing new
+        Assert.Empty(f.Svc.AdoptExistingInstalls([]));     // offline: no catalog, nothing adopted
+        Assert.DoesNotContain(new StateStore(f.P).Load(), r => r.Paks.Contains("zBlackPowder.pak"));
+    }
+
+    [Fact] public void LeftoverOf_OldPaksOfAnInstalledOfficialMod()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("z_maw_A.pak", B("aaa"));
+        f.G.WritePak("z_maw_Dropped.pak", B("old"));
+        var maw = f.Release("v2", ("z_maw_A.pak", "aaa"));
+        f.Svc.AdoptExistingInstalls([maw]);
+
+        Assert.Same(maw, ModService.LeftoverOf(["z_maw_Dropped.pak"], [maw], new StateStore(f.P).Load()));
+        Assert.Null(ModService.LeftoverOf(["zBlackPowder.pak"], [maw], new StateStore(f.P).Load()));
+        Assert.Null(ModService.LeftoverOf(["z_maw_Dropped.pak"], [maw], [])); // MAW not installed: not a leftover
+    }
+
+    [Fact] public void RemoveUnmanaged_DeletesOnlyUnownedModPaksInAssets()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("z_maw_Dropped.pak", B("old"));
+        f.G.WritePak("z_maw_A.pak", B("aaa"));
+        f.Svc.AdoptExistingInstalls([f.Release("v2", ("z_maw_A.pak", "aaa"))]);
+        File.WriteAllText(f.Asset("Objects.pak"), "vanilla");
+
+        f.Svc.RemoveUnmanaged(["z_maw_Dropped.pak"]);
+        Assert.False(File.Exists(f.Asset("z_maw_Dropped.pak")));
+        Assert.Throws<InvalidOperationException>(() => f.Svc.RemoveUnmanaged(["z_maw_A.pak"])); // owned by MAW
+        Assert.Throws<ArgumentException>(() => f.Svc.RemoveUnmanaged(["Objects.pak"]));        // vanilla game file
+        Assert.True(File.Exists(f.Asset("z_maw_A.pak")));
+        Assert.True(File.Exists(f.Asset("Objects.pak")));
+    }
+
     [Fact] public void Uninstall_RemovesOnlyOwnedPaks()
     {
         using var f = new Fixture();
