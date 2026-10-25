@@ -47,6 +47,12 @@ public class GitHubClient
     public async Task<string?> GetRawTextAsync(RepoRef repo, string path, CancellationToken ct) =>
         await GetRawBytesAsync(repo, path, ct) is { } b ? Encoding.UTF8.GetString(b) : null;
 
+    public async Task<(string? Text, bool FromCache)> GetRawTextWithCacheFlagAsync(RepoRef repo, string path, CancellationToken ct)
+    {
+        var (b, fromCache) = await FetchAsync($"https://raw.githubusercontent.com/{repo.Owner}/{repo.Repo}/HEAD/{path}", api: false, int.MaxValue, ct);
+        return (b is null ? null : Encoding.UTF8.GetString(b), fromCache);
+    }
+
     public async Task<byte[]?> GetRawBytesAsync(RepoRef repo, string path, CancellationToken ct) =>
         (await FetchAsync($"https://raw.githubusercontent.com/{repo.Owner}/{repo.Repo}/HEAD/{path}", api: false, int.MaxValue, ct)).Body;
 
