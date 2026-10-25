@@ -4,4 +4,4 @@
 
 https://github.com/JVS1328/WoR-MAW-releases
 
-https://github.com/JVS1328/WoR-1812-releases
+#https://github.com/JVS1328/WoR-1812-releases
