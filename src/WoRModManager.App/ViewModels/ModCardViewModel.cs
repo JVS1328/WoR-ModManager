@@ -1,0 +1,131 @@
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using WoRModManager.Core;
+using WoRModManager.Core.Install;
+using WoRModManager.Core.State;
+
+namespace WoRModManager.App.ViewModels;
+
+public sealed class ModCardViewModel : ObservableObject
+{
+    static readonly Brush[] Placeholders = [Gradient("#5A4630", "#2B2219"), Gradient("#2C3D5A", "#18202D"), Gradient("#3A3A3A", "#1D1D1D")];
+
+    readonly MainViewModel owner;
+    readonly bool inLibrary;
+    string? installedBuild;
+
+    public ModCardViewModel(MainViewModel owner, string key, bool inLibrary)
+    {
+        this.owner = owner;
+        this.inLibrary = inLibrary;
+        Key = key;
+        PrimaryCommand = new RelayCommand(_ => _ = owner.InstallAsync(this), _ => owner.IsIdle && CanPrimary);
+        CancelCommand = new RelayCommand(_ => owner.Cancel(), _ => IsDownloading);
+        NexusCommand = new RelayCommand(_ => MainViewModel.OpenUrl(NexusUrl!), _ => NexusUrl is not null);
+        DetailsCommand = new RelayCommand(_ => owner.ShowDetails(this));
+        UninstallCommand = new RelayCommand(_ => _ = owner.UninstallAsync(this), _ => owner.IsIdle && Record is not null);
+    }
+
+    public string Key { get; }
+    public OfficialMod? Official { get; private set; }
+    public LibraryEntry? Entry { get; private set; }
+    public ModRecord? Record => Entry?.Record;
+    public BitmapImage? Thumbnail { get; private set; }
+    public string? OverlapWarning { get; private set; }
+
+    public ICommand PrimaryCommand { get; }
+    public ICommand CancelCommand { get; }
+    public ICommand NexusCommand { get; }
+    public ICommand DetailsCommand { get; }
+    public ICommand UninstallCommand { get; }
+
+    public string Name => Record?.Name ?? Official?.Name ?? Key;
+    public string? Version => Record is { } r ? r.Version : Official?.Release?.Tag;
+    public Brush Placeholder => Placeholders[Key.Sum(c => c) % Placeholders.Length];
+
+    long ReleaseBytes => Official?.Release?.Assets.Where(a => PakNames.IsModPak(a.Name)).Sum(a => a.Size) ?? 0;
+    public string Meta => string.Join(" · ", new[] { Version, ReleaseBytes > 0 ? Mb(ReleaseBytes) : null }.OfType<string>());
+
+    public string StatusText => Entry?.Status switch
+    {
+        null => Official?.Release is null ? "No release published yet" : "Not installed",
+        ModStatus.UpToDate => "Up to date",
+        ModStatus.UpdateAvailable => "Update available",
+        ModStatus.Repair => "Some files are changed or missing",
+        ModStatus.FilesMissing => "Files missing",
+        _ => "",
+    };
+
+    // Core never reports NotInstalled: an official mod without a library entry is "not installed".
+    public string PrimaryActionText => Entry?.Status switch
+    {
+        null => "Install",
+        ModStatus.UpdateAvailable => $"Update · {Mb(Entry.Plan?.DownloadBytes ?? 0)}",
+        ModStatus.Repair => "Repair",
+        _ => "Installed",
+    };
+
+    bool CanPrimary => Official?.Release is not null && Entry?.Status is null or ModStatus.UpdateAvailable or ModStatus.Repair;
+    public bool ShowPrimary => inLibrary ? CanPrimary && Entry is not null : Entry?.Status is not ModStatus.FilesMissing;
+    public bool IsUpdate => Entry?.Status == ModStatus.UpdateAvailable;
+
+    public bool ShowToggle => Record is not null;
+    public bool IsEnabled
+    {
+        get => Record?.Enabled ?? false;
+        set { if (Record is { } r && r.Enabled != value) _ = owner.SetEnabledAsync(this, value); }
+    }
+
+    public string? NexusUrl => Official?.Description.NexusUrl;
+    public bool HasNexus => NexusUrl is not null;
+
+    public string? BuildWarning => Official?.GameBuild is { } g && installedBuild is { } b && g != b ? $"Made for game build {g}, you have {b}" : null;
+    public bool HasBuildWarning => BuildWarning is not null;
+    public bool HasOverlapWarning => OverlapWarning is not null;
+
+    public bool HasTag => inLibrary;
+    public string Tag => Record?.Source == ModSource.Imported ? "Imported" : "Official";
+
+    // Details window
+    public string Blurb => Official?.Description.Blurb is { Length: > 0 } b ? b : "No description.";
+    public string Changelog => Official?.Changelog is { Length: > 0 } c ? c.Trim() : "No changelog published.";
+    public string GameBuildText => Official?.GameBuild is { } g
+        ? $"Made for game build {g}" + (installedBuild is { } b ? $" (you have {b})" : "")
+        : "No game build listed";
+    public bool CanUninstall => Record is not null;
+
+    double progress;
+    public double Progress { get => progress; private set => Set(ref progress, value); }
+    string progressText = "";
+    public string ProgressText { get => progressText; private set => Set(ref progressText, value); }
+    bool isDownloading;
+    public bool IsDownloading { get => isDownloading; set { if (Set(ref isDownloading, value)) { Progress = 0; ProgressText = ""; } } }
+
+    internal void Update(OfficialMod? official, LibraryEntry? entry, BitmapImage? thumbnail, string? build, string? overlapWarning)
+    {
+        Official = official;
+        Entry = entry;
+        Thumbnail = thumbnail;
+        installedBuild = build;
+        OverlapWarning = overlapWarning;
+        OnPropertyChanged(string.Empty); // every computed property, including IsEnabled after a refused toggle
+    }
+
+    internal void RefreshEnabled() => OnPropertyChanged(nameof(IsEnabled));
+
+    internal void Report(DownloadProgress p)
+    {
+        Progress = p.BytesTotal > 0 ? 100.0 * p.BytesDone / p.BytesTotal : 0;
+        ProgressText = $"{p.BytesPerSecond / 1048576:0.0} MB/s";
+    }
+
+    internal static string Mb(long bytes) => $"{bytes / 1048576.0:0.#} MB";
+
+    static Brush Gradient(string from, string to)
+    {
+        var b = new LinearGradientBrush((Color)ColorConverter.ConvertFromString(from), (Color)ColorConverter.ConvertFromString(to), 45);
+        b.Freeze();
+        return b;
+    }
+}
