@@ -10,12 +10,12 @@ namespace WoRModManager.Core.Tests;
 
 public class ModServiceTests
 {
-    private const string MawId = "JVS1328/WoR-MAW-releases";
+    private const string MawId = "WoR-MAW-releases";
 
     private static byte[] B(string s) => Encoding.UTF8.GetBytes(s);
 
     private static ReleaseAsset A(string name, byte[] data) =>
-        new(name, data.Length, Convert.ToHexStringLower(SHA256.HashData(data)), new Uri($"https://github.com/{MawId}/releases/download/v/{name}"));
+        new(name, data.Length, Convert.ToHexStringLower(SHA256.HashData(data)), new Uri($"https://github.com/JVS1328/{MawId}/releases/download/v/{name}"));
 
     private static OfficialMod Maw(string tag, IEnumerable<ReleaseAsset> assets, string? gameBuild = null) =>
         new(new RepoRef("JVS1328", "WoR-MAW-releases"), "MAW", new ModDescription(null, ""), null,
@@ -69,7 +69,7 @@ public class ModServiceTests
         var r = Assert.Single(f.State);
         Assert.Equal((MawId, ModSource.Official, MawId, "v1", true), (r.Id, r.Source, r.RepoId, r.Version, r.Enabled));
         Assert.Equal(["z_maw_A.pak", "z_maw_B.pak"], r.Paks.Order());
-        Assert.False(Directory.Exists(Path.Combine(f.P.Staging, "JVS1328_WoR-MAW-releases")));
+        Assert.False(Directory.Exists(Path.Combine(f.P.Staging, MawId)));
     }
 
     [Fact] public async Task Update_OnlyDownloadsChangedPaks()
@@ -100,7 +100,7 @@ public class ModServiceTests
         Assert.Equal("aaa", File.ReadAllText(f.Asset("z_maw_A.pak")));
         Assert.Equal("bbb", File.ReadAllText(f.Asset("z_maw_B.pak")));
         Assert.Equal("v1", Assert.Single(f.State).Version);
-        Assert.True(File.Exists(Path.Combine(f.P.Staging, "JVS1328_WoR-MAW-releases", "z_maw_A.pak"))); // kept for resume
+        Assert.True(File.Exists(Path.Combine(f.P.Staging, MawId, "z_maw_A.pak"))); // kept for resume
 
         f.Fail.Clear();
         f.Http.Requests.Clear();
@@ -287,7 +287,7 @@ public class ModServiceTests
     {
         using var g = new TempGame();
         var raw = "https://raw.githubusercontent.com/JVS1328/";
-        var dl = $"https://github.com/{MawId}/releases/download/v1/";
+        var dl = $"https://github.com/JVS1328/{MawId}/releases/download/v1/";
         var http = new StubHttpHandler(req =>
         {
             var u = req.RequestUri!.ToString();
@@ -299,7 +299,7 @@ public class ModServiceTests
                     Text("# mods\nhttps://github.com/JVS1328/WoR-Gone-releases\nhttps://github.com/JVS1328/WoR-MAW-releases\n"),
                 _ when u == raw + "WoR-MAW-releases/HEAD/thumbnail.jpg" => new(HttpStatusCode.OK) { Content = new ByteArrayContent([1, 2]) },
                 _ when u == raw + "WoR-MAW-releases/HEAD/description.txt" => Text("https://www.nexusmods.com/warofrights/mods/1\nBlurb"),
-                _ when u == $"https://api.github.com/repos/{MawId}/releases/latest" => Text($$"""
+                _ when u == $"https://api.github.com/repos/JVS1328/{MawId}/releases/latest" => Text($$"""
                     {"tag_name":"v1.3.4","body":"","assets":[
                       {"name":"z_maw_UI.pak","size":3,"browser_download_url":"{{dl}}z_maw_UI.pak"},
                       {"name":"changelog.txt","size":11,"browser_download_url":"{{dl}}changelog.txt"},
@@ -384,7 +384,7 @@ public class ModServiceTests
         await Assert.ThrowsAsync<GameRunningException>(() => svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa")), null, false, default));
 
         Assert.False(File.Exists(f.Asset("z_maw_A.pak")));
-        Assert.True(File.Exists(Path.Combine(f.P.Staging, "JVS1328_WoR-MAW-releases", "z_maw_A.pak")));
+        Assert.True(File.Exists(Path.Combine(f.P.Staging, MawId, "z_maw_A.pak")));
         Assert.Empty(f.State);
     }
 
@@ -404,6 +404,33 @@ public class ModServiceTests
         using var f = new Fixture();
         f.G.WritePak("z_a.pak", B("a"));
         Assert.Equal("imported/my-mod", f.Svc.Adopt(["z_a.pak"], null, "My mod").Id);
+    }
+
+    [Fact] public void Recover_LegacyOwnerId_DropsGitHubOwnerFromStateAndFolders()
+    {
+        using var f = new Fixture();
+        File.WriteAllText(f.P.HashCacheFile, "{}");
+        new StateStore(f.P).Save([new ModRecord { Id = "JVS1328/WoR-MAW-releases", RepoId = "JVS1328/WoR-MAW-releases", Name = "MAW",
+            Source = ModSource.Official, Version = "v1.3.4", Enabled = false, Paks = ["z_maw_A.pak"] }]);
+        var oldDisabled = Path.Combine(f.P.ModsFolder, "Disabled", "JVS1328_WoR-MAW-releases");
+        var oldStage = Path.Combine(f.P.Staging, "JVS1328_WoR-MAW-releases");
+        Directory.CreateDirectory(oldDisabled); File.WriteAllBytes(Path.Combine(oldDisabled, "z_maw_A.pak"), B("a"));
+        Directory.CreateDirectory(oldStage); File.WriteAllBytes(Path.Combine(oldStage, "z_maw_B.pak.part"), B("b"));
+
+        f.Svc.RecoverIfNeeded();
+
+        var rec = Assert.Single(new StateStore(f.P).Load());
+        Assert.Equal(MawId, rec.Id);
+        Assert.Equal(MawId, rec.RepoId);
+        Assert.True(File.Exists(Path.Combine(f.P.DisabledDir(MawId), "z_maw_A.pak")));
+        Assert.True(File.Exists(Path.Combine(f.P.Staging, MawId, "z_maw_B.pak.part")));
+        Assert.False(Directory.Exists(oldDisabled));
+        Assert.False(Directory.Exists(oldStage));
+        Assert.DoesNotContain("JVS1328", File.ReadAllText(f.P.StateFile));
+        Assert.DoesNotContain("JVS1328", File.ReadAllText(f.P.StateFile + ".bak"));
+        Assert.False(File.Exists(f.P.HashCacheFile));
+        f.Svc.SetEnabled(MawId, true); // still a working mod after the move
+        Assert.True(File.Exists(Path.Combine(f.P.Assets, "z_maw_A.pak")));
     }
 
     [Fact] public void Uninstall_DisabledMod_RemovesEmptyModFolders()

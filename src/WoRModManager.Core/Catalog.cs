@@ -6,7 +6,8 @@ public record RepoRef(string Owner, string Repo)
 {
     static readonly Regex Seg = new(@"^[A-Za-z0-9\-_.]+$");
 
-    public string Id => $"{Owner}/{Repo}";
+    // Mod id = repo name only: it names folders and state.json entries, which must not show the GitHub owner.
+    public string Id => Repo;
 
     public static bool TryParse(string url, out RepoRef? repo)
     {

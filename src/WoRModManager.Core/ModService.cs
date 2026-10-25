@@ -224,9 +224,32 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     public void RecoverIfNeeded()
     {
         InstallTransaction.Recover(paths);
+        DropOwnerFromLegacyIds();
         if (!Directory.Exists(paths.Staging)) return;
         foreach (var f in Directory.GetFiles(paths.Staging, "*.part", SearchOption.AllDirectories))
             if (File.GetLastWriteTimeUtc(f) < DateTime.UtcNow.AddDays(-7)) File.Delete(f);
+    }
+
+    // Official ids used to be "owner/repo". Folders move before state is saved, so a crash in between heals on the next start.
+    void DropOwnerFromLegacyIds()
+    {
+        var mods = store.Load();
+        var changed = false;
+        foreach (var m in mods.Where(m => m.Source == ModSource.Official && m.Id.Contains('/')))
+        {
+            var id = m.Id[(m.Id.LastIndexOf('/') + 1)..];
+            if (mods.Any(o => o != m && Ci.Equals(o.Id, id))) continue;
+            MoveDir(paths.DisabledDir(m.Id), paths.DisabledDir(id));
+            MoveDir(Path.Combine(paths.Staging, m.Id.Replace('/', '_')), Path.Combine(paths.Staging, id));
+            m.Id = m.RepoId = id;
+            changed = true;
+        }
+        if (!changed) return;
+        store.Save(mods);
+        store.Save(mods); // again, so state.json.bak (the previous copy) no longer holds the old ids either
+        File.Delete(paths.HashCacheFile); // keyed by full path, so it held the old folder names; it is only a cache
+
+        static void MoveDir(string from, string to) { if (Directory.Exists(from) && !Directory.Exists(to)) Directory.Move(from, to); }
     }
 
     string StageDir(ModRecord r) => Path.Combine(paths.Staging, r.Id.Replace('/', '_'));

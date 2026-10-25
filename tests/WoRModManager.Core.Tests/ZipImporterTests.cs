@@ -8,7 +8,7 @@ namespace WoRModManager.Core.Tests;
 
 public class ZipImporterTests : IDisposable
 {
-    const string MawId = "JVS1328/WoR-MAW-releases";
+    const string MawId = "WoR-MAW-releases";
     readonly TempGame game = new();
     public void Dispose() => game.Dispose();
 

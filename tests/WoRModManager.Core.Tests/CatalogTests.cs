@@ -8,7 +8,7 @@ public class CatalogTests
     {
         var text = "# official\nhttps://github.com/JVS1328/WoR-MAW-releases\n\nhttps://github.com/JVS1328/WoR-MAW-releases/releases\nhttps://evil.com/a/b\nhttps://github.com/JVS1328/WoR-1812-releases  https://www.nexusmods.com/warofrights/mods/9\n";
         var r = Catalog.Parse(text);
-        Assert.Equal(new[] { "JVS1328/WoR-MAW-releases", "JVS1328/WoR-1812-releases" }, r.Select(x => x.Id));
+        Assert.Equal(new[] { "WoR-MAW-releases", "WoR-1812-releases" }, r.Select(x => x.Id));
     }
 
     [Theory]
