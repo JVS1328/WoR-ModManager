@@ -1,4 +1,4 @@
-﻿<Window x:Class="WoRModManager.App.MainWindow"
+<Window x:Class="WoRModManager.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:WoRModManager.App.Views"
@@ -43,7 +43,7 @@
                     <Border Style="{StaticResource Pill}" Margin="0,0,12,0" ToolTip="Installed War of Rights build (from Steam)">
                         <TextBlock Text="{Binding GameBuild}" Foreground="{StaticResource PillTextBrush}" FontSize="11" />
                     </Border>
-                    <Button x:Name="AddModButton" Content="+ Add mod ▾" Click="AddMod_Click" IsEnabled="{Binding IsIdle}" AutomationProperties.Name="Add mod">
+                    <Button x:Name="AddModButton" Content="+ Add mod ▾" Click="AddMod_Click" IsEnabled="{Binding CanAddMods}" AutomationProperties.Name="Add mod">
                         <Button.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Click="AddFromFile_Click" AutomationProperties.Name="From a zip or .pak">
@@ -77,7 +77,7 @@
         </Border>
 
         <ProgressBar Grid.Row="2" Height="2" IsIndeterminate="True" BorderThickness="0" Background="Transparent" Foreground="{StaticResource GoldBrush}"
-                     Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" AutomationProperties.Name="Working" />
+                     Visibility="{Binding IsWorking, Converter={StaticResource BoolToVis}}" AutomationProperties.Name="Working" />
 
         <Border Grid.Row="3" Background="{StaticResource AmberBgBrush}" Padding="20,8"
                 Visibility="{Binding IsOffline, Converter={StaticResource BoolToVis}}">

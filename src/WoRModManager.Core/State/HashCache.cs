@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -6,13 +7,13 @@ namespace WoRModManager.Core.State;
 public class HashCache
 {
     readonly string file;
-    readonly Dictionary<string, string> map;
+    readonly ConcurrentDictionary<string, string> map; // read and filled by operations running at the same time
 
     public HashCache(string file)
     {
         this.file = file;
-        try { map = File.Exists(file) ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file)) ?? [] : []; }
-        catch (JsonException) { map = []; } // corrupt cache is just a cold cache
+        try { map = new(File.Exists(file) ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file)) ?? [] : []); }
+        catch (JsonException) { map = new(); } // corrupt cache is just a cold cache
     }
 
     public async Task<string> GetSha256Async(string path, CancellationToken ct)
@@ -26,7 +27,10 @@ public class HashCache
 
     public void Save()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-        File.WriteAllText(file, JsonSerializer.Serialize(map));
+        lock (map)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, JsonSerializer.Serialize(new Dictionary<string, string>(map)));
+        }
     }
 }

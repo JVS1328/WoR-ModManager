@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
+using WoRModManager.Core.Import;
 using WoRModManager.Core.GitHub;
 using WoRModManager.Core.Install;
 using WoRModManager.Core.State;
@@ -27,6 +29,22 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
 
     readonly StateStore store = new(paths);
     readonly HashCache hashes = new(paths.HashCacheFile);
+
+    // Several operations can run at once (downloads are the slow part). Every write to the game folder or the mod list
+    // (state.json, the install journal, Backup\, Downloads\import\) happens inside this lock, one at a time.
+    readonly SemaphoreSlim writeLock = new(1, 1);
+    readonly ConcurrentDictionary<string, byte> downloading = new(Ci);
+
+    sealed class Releaser(SemaphoreSlim s) : IDisposable { public void Dispose() => s.Release(); }
+    IDisposable Lock() { writeLock.Wait(); return new Releaser(writeLock); }
+    async Task<IDisposable> LockAsync(CancellationToken ct) { await writeLock.WaitAsync(ct); return new Releaser(writeLock); }
+
+    public bool IsDownloading(string modId) => downloading.ContainsKey(modId);
+
+    void ThrowIfDownloading(string modId)
+    {
+        if (downloading.ContainsKey(modId)) throw new InvalidOperationException("That mod is downloading; wait for it to finish or cancel it.");
+    }
 
     public async Task<(IReadOnlyList<OfficialMod> Mods, bool FromCache)> LoadCatalogAsync(CancellationToken ct)
     {
@@ -90,7 +108,14 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
             entries.Add(new(r, off, status, plan, off?.GameBuild is { } g && build is not null && g != build, []));
         }
         hashes.Save();
-        if (versionFound) store.Save(mods);
+        if (versionFound)
+            using (Lock())
+            {
+                var fresh = store.Load();
+                foreach (var r in mods.Where(m => m.Version is not null))
+                    if (fresh.FirstOrDefault(f => Ci.Equals(f.Id, r.Id) && f.Version is null) is { } f) f.Version = r.Version;
+                store.Save(fresh);
+            }
 
         var unmanaged = Directory.Exists(paths.Assets)
             ? Directory.EnumerateFiles(paths.Assets, "z*.pak").Select(Path.GetFileName).OfType<string>()
@@ -106,6 +131,13 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     {
         if (isGameRunning()) throw new GameRunningException();
         var rel = mod.Release ?? throw new InvalidOperationException($"{mod.Name} has no release to install.");
+        if (!downloading.TryAdd(mod.Repo.Id, 0)) throw new InvalidOperationException($"{mod.Name} is already downloading.");
+        try { await DownloadAndCommitAsync(mod, rel, progress, allowOverwriteUnmanaged, ct); }
+        finally { downloading.TryRemove(mod.Repo.Id, out _); }
+    }
+
+    async Task DownloadAndCommitAsync(OfficialMod mod, ReleaseInfo rel, IProgress<DownloadProgress>? progress, bool allowOverwriteUnmanaged, CancellationToken ct)
+    {
         var mods = store.Load();
         var rec = mods.FirstOrDefault(m => m.Source == ModSource.Official && Ci.Equals(m.RepoId, mod.Repo.Id));
         if (rec is null)
@@ -129,14 +161,25 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
             done += a.Size;
         }
 
-        if (isGameRunning()) throw new GameRunningException(); // it may have started during the download; staging is kept
-        Directory.CreateDirectory(loc);
-        InstallTransaction.Commit(paths, loc, staged, plan.ToRemove);
-        rec.Version = rel.Tag;
-        rec.Paks = rel.Assets.Select(a => a.Name).Where(PakNames.IsModPak).ToList();
-        store.Save(mods);
-        hashes.Save();
-        if (Directory.Exists(stage)) Directory.Delete(stage, recursive: true);
+        using (await LockAsync(ct))
+        {
+            if (isGameRunning()) throw new GameRunningException(); // it may have started during the download; staging is kept
+            // Other operations ran meanwhile: commit against the list as it is now (the mod may have been switched off, say).
+            mods = store.Load();
+            rec = mods.FirstOrDefault(m => m.Source == ModSource.Official && Ci.Equals(m.RepoId, mod.Repo.Id));
+            if (rec is null)
+                mods.Add(rec = new ModRecord { Id = mod.Repo.Id, Name = mod.Name, Source = ModSource.Official, RepoId = mod.Repo.Id, Enabled = true });
+            loc = Location(rec);
+            var release = ReleasePaks(mod);
+            ThrowIfConflict(mods, rec, loc, staged.Keys);
+            Directory.CreateDirectory(loc);
+            InstallTransaction.Commit(paths, loc, staged, rec.Paks.Except(release, Ci).ToList());
+            rec.Version = rel.Tag;
+            rec.Paks = release;
+            store.Save(mods);
+            hashes.Save();
+            if (Directory.Exists(stage)) Directory.Delete(stage, recursive: true);
+        }
     }
 
     async Task<UpdatePlan> PlanAsync(ModRecord r, ReleaseInfo rel, string loc, CancellationToken ct)
@@ -150,6 +193,8 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     public void SetEnabled(string modId, bool enabled)
     {
         if (isGameRunning()) throw new GameRunningException();
+        ThrowIfDownloading(modId);
+        using var _ = Lock();
         var mods = store.Load();
         var r = Find(mods, modId);
         if (r.Enabled == enabled) return;
@@ -179,6 +224,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     // version = the Nexus version the installed files match (null clears the link). Also shown as the mod's version.
     public void LinkNexus(string modId, int? nexusModId, string? version, string? nexusName = null)
     {
+        using var _ = Lock();
         var mods = store.Load();
         var r = Find(mods, modId);
         r.NexusModId = nexusModId;
@@ -191,6 +237,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     // A mod added from its Nexus link before its file is downloaded: no paks yet, filled in when the download is picked.
     public ModRecord AddFromNexus(int nexusModId, string name)
     {
+        using var _ = Lock();
         var mods = store.Load();
         if (mods.FirstOrDefault(m => m.NexusModId == nexusModId) is { } existing) return existing;
         var r = new ModRecord { Id = ModRecord.ImportedId(name, mods), Name = name.Trim(), Source = ModSource.Imported, Enabled = true, NexusModId = nexusModId };
@@ -202,6 +249,8 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     public void Uninstall(string modId)
     {
         if (isGameRunning()) throw new GameRunningException();
+        ThrowIfDownloading(modId);
+        using var _ = Lock();
         var mods = store.Load();
         var r = Find(mods, modId);
         var loc = Location(r);
@@ -213,6 +262,12 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     }
 
     public ModRecord Adopt(IReadOnlyList<string> pakNames, OfficialMod? asOfficial, string? importedName)
+    {
+        using var _ = Lock();
+        return AdoptLocked(pakNames, asOfficial, importedName);
+    }
+
+    ModRecord AdoptLocked(IReadOnlyList<string> pakNames, OfficialMod? asOfficial, string? importedName)
     {
         if (pakNames.Count == 0 || !pakNames.All(PakNames.IsModPak)) throw new ArgumentException("Only z*.pak files can be adopted.");
         var mods = store.Load();
@@ -239,6 +294,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     public IReadOnlyList<ModRecord> AdoptExistingInstalls(IReadOnlyList<OfficialMod> official)
     {
         if (official.Count == 0 || !Directory.Exists(paths.Assets)) return [];
+        using var _ = Lock();
         var mods = store.Load();
         var unmanaged = Directory.EnumerateFiles(paths.Assets, "z*.pak").Select(Path.GetFileName).OfType<string>()
             .Where(n => PakNames.IsModPak(n) && StateStore.OwnerOf(mods, n) is null).ToList();
@@ -246,7 +302,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         foreach (var g in unmanaged.GroupBy(n => PakNames.Prefix(n) ?? n, Ci))
             if (MatchOfficial([.. g], official) is { } o && !mods.Any(m => Ci.Equals(m.Id, o.Repo.Id)))
             {
-                adopted.Add(Adopt([.. g], o, null));
+                adopted.Add(AdoptLocked([.. g], o, null));
                 mods = store.Load();
             }
         return adopted;
@@ -267,6 +323,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
     {
         if (isGameRunning()) throw new GameRunningException();
         if (!pakNames.All(PakNames.IsModPak)) throw new ArgumentException("Only z*.pak mod files can be removed.");
+        using var _ = Lock();
         var mods = store.Load();
         if (pakNames.Select(n => StateStore.OwnerOf(mods, n)).FirstOrDefault(o => o is not null) is { } owner)
             throw new InvalidOperationException($"{owner.Name} manages that file; uninstall it instead.");
@@ -290,8 +347,18 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
 
     internal static List<string> ReleasePaks(OfficialMod o) => o.Release?.Assets.Select(a => a.Name).Where(PakNames.IsModPak).ToList() ?? [];
 
+    // Adds or updates a mod from a zip/pak the player picked (see ZipImporter), against the mod list as it is now.
+    public ModRecord Import(ImportAnalysis a, string path, string? nameOverride, bool allowConflicts)
+    {
+        if (isGameRunning()) throw new GameRunningException();
+        if (a.TargetModId is { } target) ThrowIfDownloading(target);
+        using var _ = Lock();
+        return ZipImporter.Apply(a, path, paths, store.Load(), nameOverride, allowConflicts);
+    }
+
     public void RecoverIfNeeded()
     {
+        using var _ = Lock();
         InstallTransaction.Recover(paths);
         DropOwnerFromLegacyIds();
         if (!Directory.Exists(paths.Staging)) return;

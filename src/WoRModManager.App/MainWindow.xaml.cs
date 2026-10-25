@@ -42,7 +42,7 @@ public partial class MainWindow : Window
 
     void Window_DragOver(object sender, DragEventArgs e)
     {
-        e.Effects = ModFiles(e).Length > 0 && Vm.IsIdle ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = ModFiles(e).Length > 0 && Vm.CanAddMods ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 

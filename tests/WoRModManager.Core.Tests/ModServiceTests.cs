@@ -341,6 +341,53 @@ public class ModServiceTests
         Assert.True(File.Exists(f.Asset("Objects.pak")));
     }
 
+    [Fact] public async Task WhileOneModDownloads_OtherModsCanChange_AndTheCommitKeepsThoseChanges()
+    {
+        using var g = new TempGame();
+        var data = B("aaa");
+        using var started = new ManualResetEventSlim(false);
+        using var gate = new ManualResetEventSlim(false);
+        var http = new StubHttpHandler(_ =>
+        {
+            started.Set();
+            gate.Wait(TimeSpan.FromSeconds(10)); // the download is "in progress" until the test opens the gate
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(data) };
+        });
+        var svc = new ModService(g.Paths, new GitHubClient(http, Directory.CreateTempSubdirectory("wormm-gh").FullName), new Downloader(http), () => false);
+        g.WritePak("zOther.pak", B("o"));
+        var other = svc.Adopt(["zOther.pak"], null, "Other");
+
+        var install = Task.Run(() => svc.InstallOrUpdateAsync(Maw("v1", [A("z_maw_A.pak", data)]), null, false, default));
+        Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
+        Assert.True(svc.IsDownloading(MawId));
+        svc.SetEnabled(other.Id, false); // not blocked by the download
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.InstallOrUpdateAsync(Maw("v1", [A("z_maw_A.pak", data)]), null, false, default));
+        gate.Set();
+        await install;
+
+        Assert.False(svc.IsDownloading(MawId));
+        var state = new StateStore(g.Paths).Load();
+        Assert.False(state.Single(r => r.Id == other.Id).Enabled); // the install's commit didn't overwrite the change made meanwhile
+        Assert.Equal(["z_maw_A.pak"], state.Single(r => r.Id == MawId).Paks);
+        Assert.True(File.Exists(Path.Combine(g.Paths.DisabledDir(other.Id), "zOther.pak")));
+    }
+
+    [Fact] public async Task TwoModsInstall_AtTheSameTime_BothEndUpInstalled()
+    {
+        using var f = new Fixture();
+        var maw = f.Release("v1", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb"));
+        f.Files["z_w12_A.pak"] = B("www");
+        var w12 = new OfficialMod(new RepoRef("JVS1328", "WoR-1812-releases"), "1812", new ModDescription(null, ""), null,
+            new ReleaseInfo("v1", "", [A("z_w12_A.pak", B("www"))], false), null, null);
+
+        await Task.WhenAll(Task.Run(() => f.Svc.InstallOrUpdateAsync(maw, null, false, default)),
+                           Task.Run(() => f.Svc.InstallOrUpdateAsync(w12, null, false, default)));
+
+        var state = new StateStore(f.P).Load();
+        Assert.Equal(["WoR-1812-releases", MawId], state.Select(r => r.Id).Order());
+        foreach (var n in new[] { "z_maw_A.pak", "z_maw_B.pak", "z_w12_A.pak" }) Assert.True(File.Exists(f.Asset(n)), n);
+    }
+
     [Fact] public void Uninstall_RemovesOnlyOwnedPaks()
     {
         using var f = new Fixture();

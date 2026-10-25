@@ -481,7 +481,7 @@
                     <DockPanel Margin="0,12,0,0">
                         <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding IsEnabled, Mode=TwoWay}" VerticalAlignment="Top" Margin="8,5,0,0"
                                   Visibility="{Binding ShowToggle, Converter={StaticResource BoolToVis}}"
-                                  IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=Window}}"
+                                  IsEnabled="{Binding CanAct}"
                                   AutomationProperties.Name="{Binding Name, StringFormat=Enable {0}}" ToolTip="Enabled in the game" />
                         <WrapPanel>
                             <WrapPanel.Resources>

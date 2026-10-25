@@ -65,7 +65,7 @@ public partial class SettingsWindow : Window
         }
         else if (!MainViewModel.SamePath(root, vm.Paths.GameRoot))
         {
-            if (vm.IsBusy) PromptWindow.Show("Wait for the current operation to finish, then try again.");
+            if (vm.IsBusy || vm.HasModWork) PromptWindow.Show("Wait for the current operation to finish, then try again.");
             else await vm.ChangeGameRootAsync(root);
         }
         Refresh();

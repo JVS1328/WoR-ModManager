@@ -24,17 +24,17 @@ public sealed class ModCardViewModel : ObservableObject
         this.owner = owner;
         this.inLibrary = inLibrary;
         Key = key;
-        PrimaryCommand = new RelayCommand(_ => _ = owner.InstallAsync(this), _ => owner.IsIdle && CanPrimary);
-        CancelCommand = new RelayCommand(_ => owner.Cancel(), _ => IsDownloading);
+        PrimaryCommand = new RelayCommand(_ => _ = owner.InstallAsync(this), _ => CanAct && CanPrimary);
+        CancelCommand = new RelayCommand(_ => owner.Cancel(Key), _ => IsDownloading);
         NexusCommand = new RelayCommand(_ => MainViewModel.ShellOpen(NexusUrl!), _ => NexusUrl is not null);
         DetailsCommand = new RelayCommand(_ => owner.ShowDetails(this));
-        UninstallCommand = new RelayCommand(_ => _ = owner.UninstallAsync(this), _ => owner.IsIdle && Record is not null);
-        ManageOfficialCommand = new RelayCommand(_ => _ = owner.AdoptAsync(this, Match), _ => owner.IsIdle && Match is not null);
-        ManageNewCommand = new RelayCommand(_ => _ = owner.AdoptAsync(this, null), _ => owner.IsIdle && IsUnmanaged);
-        LinkNexusCommand = new RelayCommand(_ => _ = owner.LinkNexusAsync(this), _ => owner.IsIdle && CanLinkNexus);
-        UnlinkNexusCommand = new RelayCommand(_ => _ = owner.UnlinkNexusAsync(this), _ => owner.IsIdle && IsNexusLinked);
-        ApplyUpdateCommand = new RelayCommand(_ => _ = owner.ApplyDownloadedUpdateAsync(this), _ => owner.IsIdle && IsNexusLinked);
-        RemoveLeftoversCommand = new RelayCommand(_ => _ = owner.RemoveLeftoversAsync(this), _ => owner.IsIdle && Leftover is not null);
+        UninstallCommand = new RelayCommand(_ => _ = owner.UninstallAsync(this), _ => CanAct && Record is not null);
+        ManageOfficialCommand = new RelayCommand(_ => _ = owner.AdoptAsync(this, Match), _ => CanAct && Match is not null);
+        ManageNewCommand = new RelayCommand(_ => _ = owner.AdoptAsync(this, null), _ => CanAct && IsUnmanaged);
+        LinkNexusCommand = new RelayCommand(_ => _ = owner.LinkNexusAsync(this), _ => CanAct && CanLinkNexus);
+        UnlinkNexusCommand = new RelayCommand(_ => _ = owner.UnlinkNexusAsync(this), _ => CanAct && IsNexusLinked);
+        ApplyUpdateCommand = new RelayCommand(_ => _ = owner.ApplyDownloadedUpdateAsync(this), _ => CanAct && IsNexusLinked);
+        RemoveLeftoversCommand = new RelayCommand(_ => _ = owner.RemoveLeftoversAsync(this), _ => CanAct && Leftover is not null);
         DownloadNexusCommand = new RelayCommand(_ => MainViewModel.ShellOpen(NexusClient.FilesUrl(Record!.NexusModId!.Value)), _ => IsNexusLinked);
     }
 
@@ -72,7 +72,24 @@ public sealed class ModCardViewModel : ObservableObject
         ReleaseBytes > 0 ? Mb(ReleaseBytes) : FileCount > 0 ? $"{FileCount} file{(FileCount == 1 ? "" : "s")}" : null,
     }.OfType<string>());
 
-    public string StatusText => IsWaiting ? "Not downloaded yet. Get it from Nexus, then pick the downloaded file here." : Entry?.Status switch
+    // This mod's running operation (install, update, enable…), shown the same on its Red's Corner and My Library cards.
+    string? operation;
+    public bool IsOperating => operation is not null;
+    public bool CanAct => !IsOperating && !owner.IsLocked;
+    internal void RefreshCanAct() => OnPropertyChanged(nameof(CanAct));
+
+    internal void SetOperation(string? text, bool downloading, DownloadProgress? last)
+    {
+        operation = text;
+        IsDownloading = downloading && text is not null;
+        if (last is { } p && IsDownloading) Report(p);
+        OnPropertyChanged(nameof(IsOperating));
+        OnPropertyChanged(nameof(CanAct));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    public string StatusText => operation ?? NormalStatus;
+    string NormalStatus => IsWaiting ? "Not downloaded yet. Get it from Nexus, then pick the downloaded file here." : Entry?.Status switch
     {
         null => Official?.Release is null ? "No release published yet" : "Not installed",
         ModStatus.UpToDate => Record?.Source == ModSource.Imported || Official is null ? "Installed" : "Up to date",

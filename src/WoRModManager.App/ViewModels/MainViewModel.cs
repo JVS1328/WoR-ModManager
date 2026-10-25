@@ -43,7 +43,6 @@ public sealed class MainViewModel : ObservableObject
     ReShadeService reshade = null!;
     IReadOnlyList<OfficialMod> catalog = [];
     IReadOnlyList<LibraryEntry> library = [];
-    CancellationTokenSource cts = new();
     string? installedBuild;
     bool recoverPending;
 
@@ -70,6 +69,110 @@ public sealed class MainViewModel : ObservableObject
 
     string statusText = "";
     public string StatusText { get => statusText; private set => Set(ref statusText, value); }
+    string exclusiveStatus = "";
+
+    // Mod operations run side by side, one per key (a mod's card key, or a file being added). Both tabs' cards for a mod show its operation.
+    sealed class ModOp(string text, bool downloading)
+    {
+        public string Text = text;
+        public readonly bool Downloading = downloading;
+        public DownloadProgress? Last;
+        public readonly CancellationTokenSource Cts = new();
+        public string Line => Downloading && Last is { BytesTotal: > 0 } p ? $"{Text} {100 * p.BytesDone / p.BytesTotal}%" : Text;
+    }
+    readonly Dictionary<string, ModOp> ops = new(Ci);
+    bool reloading, reloadAgain;
+
+    void UpdateStatus() =>
+        StatusText = string.Join("   ·   ", new[] { exclusiveStatus }.Concat(ops.Values.Select(o => o.Line)).Where(s => s.Length > 0));
+
+    void SetStatus(string text)
+    {
+        exclusiveStatus = text;
+        UpdateStatus();
+    }
+
+    void SetOpText(string key, string text)
+    {
+        if (!ops.TryGetValue(key, out var o)) return;
+        o.Text = text;
+        ApplyOp(key);
+        UpdateStatus();
+    }
+
+    IEnumerable<ModCardViewModel> CardsFor(string key) => Official.Concat(Library).Where(c => Ci.Equals(c.Key, key));
+
+    void ApplyOp(string key)
+    {
+        ops.TryGetValue(key, out var o);
+        foreach (var c in CardsFor(key)) c.SetOperation(o?.Text, o?.Downloading ?? false, o?.Last);
+    }
+
+    IProgress<DownloadProgress> ProgressFor(string key) => new Progress<DownloadProgress>(p =>
+    {
+        if (!ops.TryGetValue(key, out var o)) return;
+        o.Last = p;
+        foreach (var c in CardsFor(key)) c.Report(p);
+        UpdateStatus();
+    });
+
+    public bool IsWorking => IsBusy || ops.Count > 0;
+    public bool HasModWork => ops.Count > 0;
+
+    // Runs one mod operation without blocking the others. False if that mod is already busy or settings are being changed.
+    internal async Task<bool> RunModAsync(string key, string text, Func<CancellationToken, Task> op, bool downloading = false)
+    {
+        if (IsLocked || ops.ContainsKey(key)) return false;
+        var o = ops[key] = new ModOp(text, downloading);
+        OpsChanged(key);
+        try { await op(o.Cts.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception e) { HandleError(e); }
+        finally
+        {
+            ops.Remove(key);
+            OpsChanged(key);
+        }
+        await ReloadLibraryAsync();
+        return true;
+    }
+
+    void OpsChanged(string key)
+    {
+        ApplyOp(key);
+        UpdateStatus();
+        OnPropertyChanged(nameof(IsWorking));
+        OnPropertyChanged(nameof(HasModWork));
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    internal void Cancel(string key)
+    {
+        if (ops.TryGetValue(key, out var o)) o.Cts.Cancel();
+    }
+
+    internal bool IsOperating(string key) => ops.ContainsKey(key);
+
+    // Many operations finish at different times; their library reloads collapse into one running reload plus at most one more.
+    async Task ReloadLibraryAsync()
+    {
+        if (reloading)
+        {
+            reloadAgain = true;
+            return;
+        }
+        reloading = true;
+        try
+        {
+            do
+            {
+                reloadAgain = false;
+                await LoadLibraryAsync();
+            } while (reloadAgain);
+        }
+        catch (Exception e) { HandleError(e); }
+        finally { reloading = false; }
+    }
 
     string gameBuild = "";
     public string GameBuild { get => gameBuild; private set => Set(ref gameBuild, value); }
@@ -86,6 +189,7 @@ public sealed class MainViewModel : ObservableObject
     public string ManagerUpdateText => ManagerUpdate is { } r ? $"Manager {r.Tag} is available —" : "";
 
     bool isBusy;
+    // An app-wide operation (refresh, ReShade, settings, self-update) is running. Mod operations can still run alongside, except while locked.
     public bool IsBusy
     {
         get => isBusy;
@@ -93,10 +197,26 @@ public sealed class MainViewModel : ObservableObject
         {
             if (!Set(ref isBusy, value)) return;
             OnPropertyChanged(nameof(IsIdle));
+            OnPropertyChanged(nameof(IsWorking));
             CommandManager.InvalidateRequerySuggested();
         }
     }
     public bool IsIdle => !IsBusy;
+
+    bool isLocked;
+    // Changing the game or Mods folder, or updating the manager itself: nothing else may touch the mods meanwhile.
+    public bool IsLocked
+    {
+        get => isLocked;
+        private set
+        {
+            if (!Set(ref isLocked, value)) return;
+            OnPropertyChanged(nameof(CanAddMods));
+            foreach (var c in Official.Concat(Library)) c.RefreshCanAct();
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
+    public bool CanAddMods => !IsLocked;
 
     public static bool IsGameRunning() => Process.GetProcessesByName("WarOfRights").Length > 0;
 
@@ -159,37 +279,37 @@ public sealed class MainViewModel : ObservableObject
                                    || (e is TaskCanceledException && !ct.IsCancellationRequested)) { }
     }
 
-    // ModService is not thread-safe: one operation at a time, heavy work off the UI thread, library reloaded after.
-    internal async Task<bool> RunAsync(string status, Func<CancellationToken, Task> op, bool reload = true)
+    // App-wide operations, one at a time. lockMods: nothing may touch the mods meanwhile, so it waits for mod operations to finish first.
+    internal async Task<bool> RunAsync(string status, Func<CancellationToken, Task> op, bool reload = true, bool lockMods = false)
     {
         if (IsBusy) return false;
+        if (lockMods && ops.Count > 0)
+        {
+            PromptWindow.Show("Wait for the downloads and other mod changes to finish, then try again.");
+            return false;
+        }
         IsBusy = true;
-        StatusText = status;
-        cts = new CancellationTokenSource();
+        IsLocked = lockMods;
+        SetStatus(status);
         try
         {
-            await op(cts.Token);
-            StatusText = "";
+            await op(CancellationToken.None);
+            SetStatus("");
         }
         catch (OperationCanceledException)
         {
-            StatusText = "Cancelled.";
+            SetStatus("");
         }
         catch (Exception e)
         {
-            StatusText = "";
+            SetStatus("");
             HandleError(e);
         }
-        if (reload)
-        {
-            try { await LoadLibraryAsync(); }
-            catch (Exception e) { HandleError(e); }
-        }
+        IsLocked = false;
         IsBusy = false;
+        if (reload) await ReloadLibraryAsync();
         return true;
     }
-
-    internal void Cancel() => cts.Cancel();
 
     void HandleError(Exception e)
     {
@@ -260,6 +380,8 @@ public sealed class MainViewModel : ObservableObject
             card.Update(mod, entry, Thumb(mod ?? match ?? leftover), installedBuild, overlap(entry), match, leftover);
             var info = entry?.Record?.NexusModId is int nid && nexusInfo.TryGetValue(nid, out var ni) ? ni : null;
             card.SetNexus(info, info?.PictureUrl is { } pic && nexusPictures.TryGetValue(pic, out var img) ? img : null);
+            ops.TryGetValue(key, out var op);
+            card.SetOperation(op?.Text, op?.Downloading ?? false, op?.Last);
             var at = cards.IndexOf(card);
             if (at < 0) cards.Insert(i, card);
             else if (at != i) cards.Move(at, i);
@@ -295,37 +417,36 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    internal Task InstallAsync(ModCardViewModel card) => RunAsync($"Installing {card.Name}…", async ct =>
+    internal Task InstallAsync(ModCardViewModel card)
     {
         if (card.Entry?.Plan?.ToRemove is { Count: > 0 } removed
             && !PromptWindow.Ask($"This update deletes these files from the game:\n\n{string.Join("\n", removed)}", "Update"))
-            return;
+            return Task.CompletedTask;
         var fresh = card.Record is null;
-        card.IsDownloading = true;
-        try
+        var key = card.Key;
+        return RunModAsync(key, $"{(fresh ? "Installing" : "Updating")} {card.Name}…", ct => InstallCoreAsync(card, key, fresh, ct), downloading: true);
+    }
+
+    async Task InstallCoreAsync(ModCardViewModel card, string key, bool fresh, CancellationToken ct)
+    {
+        var mod = card.Official!;
+        var progress = ProgressFor(key);
+        Task Install(bool overwrite) => Task.Run(() => service.InstallOrUpdateAsync(mod, progress, overwrite, ct), ct);
+        try { await Install(false); }
+        catch (UnmanagedFilesException e)
         {
-            var progress = new Progress<DownloadProgress>(card.Report);
-            Task Install(bool overwrite) => Task.Run(() => service.InstallOrUpdateAsync(card.Official!, progress, overwrite, ct), ct);
-            try { await Install(false); }
-            catch (UnmanagedFilesException e)
-            {
-                if (!AskOverwrite(e.Names)) return;
-                await Install(true);
-            }
-        }
-        finally
-        {
-            card.IsDownloading = false;
+            if (!AskOverwrite(e.Names)) return;
+            await Install(true);
         }
         // A fresh install is enabled, so it gets the same overlap warning as enabling; the paks exist only now.
-        if (fresh && new StateStore(Paths).Load().FirstOrDefault(m => m.Source == ModSource.Official && Ci.Equals(m.RepoId, card.Official!.Repo.Id)) is { } r)
+        if (fresh && new StateStore(Paths).Load().FirstOrDefault(m => m.Source == ModSource.Official && Ci.Equals(m.RepoId, mod.Repo.Id)) is { } r)
         {
             var enabled = Records(library).Where(m => m.Enabled).ToList();
             var found = await Task.Run(() => overlaps.FindFor(r, enabled, Paths), ct);
             if (found.Count > 0 && !PromptWindow.Ask(OverlapPrompt(r, found), "Keep enabled", "Disable"))
                 await Task.Run(() => service.SetEnabled(r.Id, false), ct);
         }
-    });
+    }
 
     string OverlapPrompt(ModRecord r, IEnumerable<Overlap> found) => string.Join("\n\n", found.Select(o => Overlap.Message(r.Name, NameOf(o.ModB), o)));
 
@@ -333,7 +454,7 @@ public sealed class MainViewModel : ObservableObject
     {
         await Task.Yield(); // leave the binding setter before any dialog shows
         var r = card.Record!;
-        var ran = await RunAsync(on ? $"Enabling {r.Name}…" : $"Disabling {r.Name}…", async ct =>
+        var ran = await RunModAsync(card.Key, on ? $"Enabling {r.Name}…" : $"Disabling {r.Name}…", async ct =>
         {
             if (IsGameRunning()) throw new GameRunningException();
             if (on)
@@ -349,19 +470,19 @@ public sealed class MainViewModel : ObservableObject
     }
 
     internal Task AdoptAsync(ModCardViewModel card, OfficialMod? official) =>
-        RunAsync("Taking over the files…", ct => Task.Run(() => service.Adopt(card.Entry!.UnmanagedPaks, official, null), ct));
+        RunModAsync(card.Key, "Taking over the files…", ct => Task.Run(() => service.Adopt(card.Entry!.UnmanagedPaks, official, null), ct));
 
     public async Task AddFilesAsync(IEnumerable<string> files)
     {
         foreach (var f in files)
-            if (!await RunAsync($"Adding {Path.GetFileName(f)}…", ct => AddFileAsync(f, ct)))
-            {
-                PromptWindow.Show("Wait for the current operation to finish, then add the file again.");
-                return;
-            }
+        {
+            var key = "add:" + Path.GetFullPath(f);
+            if (!await RunModAsync(key, $"Adding {Path.GetFileName(f)}…", ct => AddFileAsync(f, key, ct)))
+                PromptWindow.Show(IsLocked ? "Wait for the settings change to finish, then add the file again." : $"{Path.GetFileName(f)} is already being added.");
+        }
     }
 
-    async Task AddFileAsync(string path, CancellationToken ct)
+    async Task AddFileAsync(string path, string key, CancellationToken ct)
     {
         if (IsGameRunning()) throw new GameRunningException();
         var mods = new StateStore(Paths).Load();
@@ -371,12 +492,13 @@ public sealed class MainViewModel : ObservableObject
         (int ModId, string Version)? hit = null;
         if (a.Kind is ImportKind.NewMod or ImportKind.UpdateOf)
         {
-            StatusText = "Checking the file with Nexus…";
+            SetOpText(key, $"Checking {Path.GetFileName(path)} with Nexus…");
             hit = await IdentifyOnNexusAsync(path, ct);
             // a download of a mod already in My Library (linked to Nexus) replaces it, whatever its files are called
             if (hit is { } h && mods.FirstOrDefault(m => m.NexusModId == h.ModId) is { } linked)
             {
-                await ReplaceModAsync(path, linked, h.Version, null, ct);
+                if (IsOperating(linked.Id)) throw new InvalidOperationException($"{linked.Name} is busy; try again when it's done.");
+                await ReplaceModAsync(path, linked, h.Version, null, key, ct);
                 return;
             }
             if (hit is { } found && await TryNexusInfoAsync(found.ModId, ct) is { } info)
@@ -405,10 +527,10 @@ public sealed class MainViewModel : ObservableObject
         }
         var overwrite = a.Conflicts.Count > 0;
         if (overwrite && !AskOverwrite(a.Conflicts)) return;
-        if (IsGameRunning()) throw new GameRunningException(); // ZipImporter doesn't check, and the game may have started meanwhile
+        SetOpText(key, $"Adding {Path.GetFileName(path)}…");
         await Task.Run(() =>
         {
-            var rec = ZipImporter.Apply(a, path, Paths, mods, name, overwrite);
+            var rec = service.Import(a, path, name, overwrite);
             if (hit is { } h && rec.Source == ModSource.Imported && rec.NexusModId is null)
                 service.LinkNexus(rec.Id, h.ModId, h.Version, nexusInfo.TryGetValue(h.ModId, out var ni) ? ni.Name : null);
             else MarkNexusCurrent(rec); // an update for a Nexus-linked mod is assumed to be the version Nexus has now
@@ -432,7 +554,7 @@ public sealed class MainViewModel : ObservableObject
             PromptWindow.Show("That isn't a War of Rights mod page on nexusmods.com. It should look like https://www.nexusmods.com/warofrights/mods/3");
             return;
         }
-        await RunAsync("Checking Nexus…", async ct =>
+        await RunModAsync(card.Key, "Checking Nexus…", async ct =>
         {
             NexusModInfo? info = null;
             try { (await nexus.GetModsAsync([id], ct)).TryGetValue(id, out info); }
@@ -461,7 +583,7 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
         var openPage = false;
-        await RunAsync("Checking Nexus…", async ct =>
+        await RunModAsync($"nexus:{id}", "Checking Nexus…", async ct =>
         {
             var info = await TryNexusInfoAsync(id, ct);
             if (info is null)
@@ -510,7 +632,7 @@ public sealed class MainViewModel : ObservableObject
     }
 
     internal Task UnlinkNexusAsync(ModCardViewModel card) =>
-        RunAsync("Unlinking…", ct => Task.Run(() => service.LinkNexus(card.Record!.Id, null, null), ct));
+        RunModAsync(card.Key, "Unlinking…", ct => Task.Run(() => service.LinkNexus(card.Record!.Id, null, null), ct));
 
     internal async Task ApplyDownloadedUpdateAsync(ModCardViewModel card)
     {
@@ -518,18 +640,19 @@ public sealed class MainViewModel : ObservableObject
         if (d.ShowDialog() != true) return;
         var target = card.Record;
         var latest = card.NexusLatestVersion;
-        if (!await RunAsync($"Updating {target.Name}…", ct => ReplaceModAsync(d.FileName, target, null, latest, ct)))
-            PromptWindow.Show("Wait for the current operation to finish, then try again.");
+        var key = card.Key;
+        if (!await RunModAsync(key, $"Updating {target.Name}…", ct => ReplaceModAsync(d.FileName, target, null, latest, key, ct)))
+            PromptWindow.Show($"{target.Name} is busy; try again when it's done.");
     }
 
     // knownVersion: already identified by the file's hash; otherwise it's looked up here, falling back to Nexus's latest version.
-    async Task ReplaceModAsync(string path, ModRecord target, string? knownVersion, string? fallbackVersion, CancellationToken ct)
+    async Task ReplaceModAsync(string path, ModRecord target, string? knownVersion, string? fallbackVersion, string key, CancellationToken ct)
     {
         if (IsGameRunning()) throw new GameRunningException();
         var nexusVersion = knownVersion;
         if (nexusVersion is null && target.NexusModId is int linkedId)
         {
-            StatusText = "Checking the file with Nexus…";
+            SetOpText(key, $"Checking {Path.GetFileName(path)} with Nexus…");
             var hit = await IdentifyOnNexusAsync(path, ct);
             if (hit is { } h && h.ModId != linkedId && !PromptWindow.Ask(
                     $"Nexus says this file belongs to a different mod (#{h.ModId}), not {target.Name}. Use it for {target.Name} anyway?", "Use it"))
@@ -551,10 +674,10 @@ public sealed class MainViewModel : ObservableObject
             return;
         var overwrite = a.Conflicts.Count > 0;
         if (overwrite && !AskOverwrite(a.Conflicts)) return;
-        if (IsGameRunning()) throw new GameRunningException();
+        SetOpText(key, $"Updating {target.Name}…");
         await Task.Run(() =>
         {
-            ZipImporter.Apply(a, path, Paths, mods, null, overwrite);
+            service.Import(a, path, null, overwrite);
             if (target.NexusModId is int id && nexusVersion is { Length: > 0 }) service.LinkNexus(target.Id, id, nexusVersion);
         }, ct);
     }
@@ -565,17 +688,17 @@ public sealed class MainViewModel : ObservableObject
     internal Task RemoveLeftoversAsync(ModCardViewModel card)
     {
         var names = card.Entry!.UnmanagedPaks;
-        if (IsBusy || !PromptWindow.Ask($"Delete these files left over from an older {card.Leftover!.Name} version? They're not part of the current version but still change the game.\n\n{string.Join("\n", names)}", "Delete"))
+        if (!card.CanAct || !PromptWindow.Ask($"Delete these files left over from an older {card.Leftover!.Name} version? They're not part of the current version but still change the game.\n\n{string.Join("\n", names)}", "Delete"))
             return Task.CompletedTask;
-        return RunAsync("Removing leftover files…", ct => Task.Run(() => service.RemoveUnmanaged(names), ct));
+        return RunModAsync(card.Key, "Removing leftover files…", ct => Task.Run(() => service.RemoveUnmanaged(names), ct));
     }
 
     internal Task UninstallAsync(ModCardViewModel card)
     {
         var r = card.Record!;
         var question = r.Paks.Count == 0 ? $"Remove {r.Name} from My Library?" : $"Delete {r.Paks.Count} files of {r.Name} from the game?";
-        if (IsBusy || !PromptWindow.Ask(question, r.Paks.Count == 0 ? "Remove" : "Delete")) return Task.CompletedTask;
-        return RunAsync($"Uninstalling {r.Name}…", ct => Task.Run(() => service.Uninstall(r.Id), ct));
+        if (!card.CanAct || !PromptWindow.Ask(question, r.Paks.Count == 0 ? "Remove" : "Delete")) return Task.CompletedTask;
+        return RunModAsync(card.Key, $"Uninstalling {r.Name}…", ct => Task.Run(() => service.Uninstall(r.Id), ct));
     }
 
     internal void ShowDetails(ModCardViewModel card)
@@ -587,10 +710,10 @@ public sealed class MainViewModel : ObservableObject
     Task UpdateManagerAsync() => RunAsync("Downloading the manager update…", async ct =>
     {
         var progress = new Progress<DownloadProgress>(p =>
-            StatusText = $"Downloading the manager update… {(p.BytesTotal > 0 ? 100 * p.BytesDone / p.BytesTotal : 0)}%");
+            SetStatus($"Downloading the manager update… {(p.BytesTotal > 0 ? 100 * p.BytesDone / p.BytesTotal : 0)}%"));
         await Task.Run(() => updater.ApplyAsync(ManagerUpdate!, progress, ct), ct);
         Application.Current.Shutdown();
-    }, reload: false);
+    }, reload: false, lockMods: true);
 
     internal Task<bool> ChangeGameRootAsync(string root) => RunAsync("Loading the game folder…", async ct =>
     {
@@ -599,14 +722,14 @@ public sealed class MainViewModel : ObservableObject
         await Task.Run(() => Directory.CreateDirectory(mods), ct);
         SettingsStore.Save(SettingsFile, new AppSettings(root, mods));
         Load(new GamePaths(root, mods));
-    });
+    }, lockMods: true);
 
     internal async Task ChangeModsFolderAsync(string folder)
     {
         if (SamePath(folder, Paths.ModsFolder)) return;
-        if (IsBusy)
+        if (IsBusy || HasModWork)
         {
-            PromptWindow.Show("Wait for the current operation to finish, then try again.");
+            PromptWindow.Show("Wait for the downloads and other changes to finish, then try again.");
             return;
         }
         var next = new GamePaths(Paths.GameRoot, folder);
@@ -624,7 +747,7 @@ public sealed class MainViewModel : ObservableObject
                 throw;
             }
             Load(next);
-        });
+        }, lockMods: true);
     }
 
     internal static bool SamePath(string a, string b) =>
