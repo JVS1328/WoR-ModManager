@@ -30,12 +30,12 @@ img.alpha_composite(logo, (int(x0), 52))
 d.text((x0 + 150 + 32, 127), title, font=title_f, fill=CREAM, anchor="lm")
 tag = "One-click install, updates and switching for War of Rights mods"
 d.text((W / 2, 236), tag, font=tag_f, fill=GOLD, anchor="mm")
-feats = "Official mods  ·  Only changed files download  ·  Enable / disable  ·  Add any .pak or .zip  ·  ReShade presets"
+feats = "Red's mods  ·  Only changed files download  ·  Nexus update alerts  ·  Enable / disable  ·  ReShade presets"
 d.text((W / 2, 290), feats, font=feat_f, fill=MUTED, anchor="mm")
 
 # screenshot: header + cards only, rounded corners, soft shadow
-shot = Image.open(sys.argv[1]).convert("RGBA").crop((8, 1, 1032, 468))  # trim the window frame, which shows whatever is behind it
-sw = 1500
+shot = Image.open(sys.argv[1]).convert("RGBA").crop((8, 1, 1032, 500))  # trim the window frame, which shows whatever is behind it
+sw = 1400
 shot = shot.resize((sw, int(shot.height * sw / shot.width)), Image.LANCZOS)
 r = 18
 m = Image.new("L", shot.size, 0)
