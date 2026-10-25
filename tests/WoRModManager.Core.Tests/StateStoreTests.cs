@@ -1,0 +1,63 @@
+using WoRModManager.Core.State;
+using WoRModManager.Core.Tests.TestUtil;
+
+namespace WoRModManager.Core.Tests;
+
+public class StateStoreTests : IDisposable
+{
+    readonly TempGame game = new();
+    public void Dispose() => game.Dispose();
+
+    [Fact] public void Save_ThenLoad_RoundTrips()
+    {
+        var store = new StateStore(game.Paths);
+        store.Save([new ModRecord { Id = "a/b", Name = "AB", Source = ModSource.Official, RepoId = "a/b", Version = "v1", Enabled = true, Paks = ["z_ab_x.pak", "z_ab_y.pak"] }]);
+        var m = Assert.Single(store.Load());
+        Assert.Equal("a/b", m.Id); Assert.Equal("AB", m.Name); Assert.Equal(ModSource.Official, m.Source);
+        Assert.Equal("a/b", m.RepoId); Assert.Equal("v1", m.Version); Assert.True(m.Enabled);
+        Assert.Equal(new[] { "z_ab_x.pak", "z_ab_y.pak" }, m.Paks);
+        Assert.False(File.Exists(game.Paths.StateFile + ".tmp"));
+    }
+
+    [Fact] public void Load_MissingFile_ReturnsEmpty() => Assert.Empty(new StateStore(game.Paths).Load());
+
+    [Fact] public void OwnerOf_IsCaseInsensitive()
+    {
+        var mods = new List<ModRecord> { new() { Id = "x", Name = "X", Paks = ["z_X.pak"] } };
+        Assert.Same(mods[0], StateStore.OwnerOf(mods, "Z_x.PAK"));
+        Assert.Null(StateStore.OwnerOf(mods, "other.pak"));
+    }
+
+    [Fact] public void Location_FollowsEnabled()
+    {
+        var m = new ModRecord { Id = "a/b", Name = "AB", Enabled = true };
+        Assert.Equal(game.Paths.Assets, m.Location(game.Paths));
+        m.Enabled = false;
+        Assert.Equal(game.Paths.DisabledDir("a/b"), m.Location(game.Paths));
+    }
+
+    [Fact] public void ImportedId_SlugsAndDeduplicates()
+    {
+        Assert.Equal("imported/my-cool-mod", ModRecord.ImportedId("  My Cool_Mod!! ", []));
+        Assert.Equal("imported/mod", ModRecord.ImportedId("!!!", []));
+        ModRecord[] existing = [new() { Id = "imported/maw" }, new() { Id = "Imported/MAW-2" }];
+        Assert.Equal("imported/maw-3", ModRecord.ImportedId("MAW", existing));
+    }
+
+    [Fact] public void Load_CorruptState_FallsBackToBackup()
+    {
+        var store = new StateStore(game.Paths);
+        store.Save([new ModRecord { Id = "one", Name = "One" }]);
+        store.Save([new ModRecord { Id = "two", Name = "Two" }]);
+        File.WriteAllText(game.Paths.StateFile, "{ torn");
+        Assert.Equal("one", Assert.Single(store.Load()).Id);
+    }
+
+    [Fact] public void Load_StateAndBackupDamaged_ThrowsClearError()
+    {
+        File.WriteAllText(game.Paths.StateFile, "{ torn");
+        File.WriteAllText(game.Paths.StateFile + ".bak", "also torn");
+        var e = Assert.Throws<InvalidDataException>(() => new StateStore(game.Paths).Load());
+        Assert.Equal($"Mod list file is damaged: {game.Paths.StateFile}", e.Message);
+    }
+}

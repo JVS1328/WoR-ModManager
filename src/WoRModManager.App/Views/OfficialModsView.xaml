@@ -1,0 +1,44 @@
+<UserControl x:Class="WoRModManager.App.Views.OfficialModsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <DockPanel Margin="24,20,24,16">
+            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Command="{Binding RefreshCommand}" VerticalAlignment="Center"
+                    AutomationProperties.Name="Refresh" ToolTip="Check GitHub for new mods and updates">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBlock Text="Refresh" />
+                </StackPanel>
+            </Button>
+            <StackPanel>
+                <TextBlock Text="Official Mods" Style="{StaticResource Heading}" />
+                <TextBlock Text="Install, update and switch official mods on or off." Style="{StaticResource Muted}" Margin="0,2,0,0" />
+            </StackPanel>
+        </DockPanel>
+        <ScrollViewer Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl x:Name="Cards" ItemsSource="{Binding Official}" ItemTemplate="{StaticResource ModCard}"
+                          ItemsPanel="{StaticResource CardPanel}" Focusable="False" Margin="24,0,8,8" />
+        </ScrollViewer>
+        <TextBlock Grid.Row="1" FontSize="13" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="24,40"
+                   Text="No official mods to show yet. Check your connection and press Refresh.">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding HasItems, ElementName=Cards}" Value="False" />
+                                <Condition Binding="{Binding IsBusy}" Value="False" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Visibility" Value="Visible" />
+                        </MultiDataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+    </Grid>
+</UserControl>
