@@ -367,7 +367,7 @@ public class ModServiceTests
             HttpResponseMessage Text(string s) => new(HttpStatusCode.OK) { Content = new StringContent(s) };
             return u switch
             {
-                _ when u == raw + "WoR-ModManager/HEAD/catalog.txt" =>
+                _ when u == raw + "WoR-ModManager-releases/HEAD/catalog.txt" =>
                     Text("# mods\nhttps://github.com/JVS1328/WoR-Gone-releases\nhttps://github.com/JVS1328/WoR-MAW-releases\n"),
                 _ when u == raw + "WoR-MAW-releases/HEAD/thumbnail.jpg" => new(HttpStatusCode.OK) { Content = new ByteArrayContent([1, 2]) },
                 _ when u == raw + "WoR-MAW-releases/HEAD/description.txt" => Text("https://www.nexusmods.com/warofrights/mods/1\nBlurb"),
@@ -576,7 +576,7 @@ public class ModServiceTests
             HttpResponseMessage Text(string s) => new(HttpStatusCode.OK) { Content = new StringContent(s) };
             return u switch
             {
-                _ when u == raw + "WoR-ModManager/HEAD/catalog.txt" => Text(
+                _ when u == raw + "WoR-ModManager-releases/HEAD/catalog.txt" => Text(
                     "https://github.com/JVS1328/WoR-Torn-releases\nhttps://github.com/JVS1328/WoR-NoName-releases\nhttps://github.com/JVS1328/WoR-MAW-releases\n"),
                 _ when u.EndsWith("WoR-Torn-releases/releases/latest") => Text("{ torn"),
                 _ when u.EndsWith("WoR-NoName-releases/releases/latest") => Text("""{"tag_name":"v1","assets":[{"size":3}]}"""),

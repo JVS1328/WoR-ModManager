@@ -24,7 +24,7 @@ public class SelfUpdaterTests
     static string Release(string tag, string name = "WoRModManager.exe", bool digest = true) => $$"""
         {"tag_name":"{{tag}}","body":"","assets":[{"name":"{{name}}","size":{{NewExe.Length}},
           {{(digest ? $"\"digest\":\"sha256:{Sha}\"," : "")}}
-          "browser_download_url":"https://github.com/JVS1328/WoR-ModManager/releases/download/{{tag}}/x.exe"}]}
+          "browser_download_url":"https://github.com/JVS1328/WoR-ModManager-releases/releases/download/{{tag}}/x.exe"}]}
         """;
 
     [Theory] [InlineData("v1.2.3", "1.2.3")] [InlineData("1.0", "1.0")] [InlineData("beta", null)]
@@ -34,20 +34,8 @@ public class SelfUpdaterTests
     {
         var r = await Updater(Release("v1.1.0"), new Version(1, 0, 0, 0), out var gh).CheckAsync(default);
         Assert.Equal("v1.1.0", r!.Tag);
-        Assert.Equal("https://api.github.com/repos/JVS1328/WoR-ModManager/releases/latest", gh.Requests.Single().RequestUri!.ToString());
+        Assert.Equal("https://api.github.com/repos/JVS1328/WoR-ModManager-releases/releases/latest", gh.Requests.Single().RequestUri!.ToString());
         Assert.Null(await Updater(Release("v1.1.0", name: "Other.exe"), new Version(1, 0, 0, 0), out _).CheckAsync(default));
-    }
-
-    [Theory]
-    [InlineData("War of Rights Mod Manager.exe")]  // the 1.0.x name
-    public async Task Check_OldAssetName_StillAccepted(string name) =>
-        Assert.Equal("v1.1.0", (await Updater(Release("v1.1.0", name: name), new Version(1, 0, 0, 0), out _).CheckAsync(default))!.Tag);
-
-    [Fact] public async Task Check_GitHubDottedAssetName_ReturnsRelease()
-    {
-        // GitHub swaps spaces for dots when the exe is uploaded
-        var r = await Updater(Release("v1.1.0", name: "War.of.Rights.Mod.Manager.exe"), new Version(1, 0, 0, 0), out _).CheckAsync(default);
-        Assert.Equal("v1.1.0", r!.Tag);
     }
 
     [Fact] public async Task Check_SameVersion_ReturnsNull()

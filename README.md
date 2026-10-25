@@ -13,16 +13,16 @@ dotnet test       # Core tests
 
 1. Bump `<Version>` in `src/WoRModManager.App/WoRModManager.App.csproj` (e.g. `1.1.0`).
 2. Run `.\publish.ps1`.
-3. On `JVS1328/WoR-ModManager`, create a release tagged `vX.Y.Z` (same number as `<Version>`) and attach `publish\WoRModManager.exe`,
-   `publish\WoR-Mod-Manager-vX.Y.Z.zip`, and `publish\legacy\War of Rights Mod Manager.exe` (the same exe under the 1.0.x name, so copies
-   still on 1.0.x can update themselves; drop it once nobody is on 1.0.x).
-4. Upload the zip to Nexus for new downloads.
+3. In `..\WoR-ModManager-releases` (the public repo players read), write `changelog.txt` and run `.\release.ps1 X.Y.Z`.
+4. Upload the zip from `publish\` to Nexus for new downloads.
 
-Running managers see the new tag and show an "update available" bar.
+Running managers see the new release and offer "Update now".
 
 ## Red's Corner list
 
-`catalog.txt` at the repo root: one mod per line, the mod's releases repo URL; line order is card order; `#` starts a comment. Add a line to list a mod, delete it to remove it. Players get changes on Refresh, no new exe needed.
+`catalog.txt` lives in the public [WoR-ModManager-releases](https://github.com/JVS1328/WoR-ModManager-releases) repo (`..\WoR-ModManager-releases`): one mod per line, the mod's releases repo URL; line order is card order; `#` hides a line. Players get changes on Refresh, no new exe needed.
+
+This source repo is private. The app only reads public repos: `WoR-ModManager-releases` (catalog + manager releases) and each mod's releases repo.
 
 ## Releasing a mod
 

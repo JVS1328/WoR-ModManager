@@ -21,7 +21,7 @@ public class UnmanagedFilesException(IReadOnlyList<string> names)
 
 public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bool> isGameRunning)
 {
-    static readonly RepoRef CatalogRepo = new("JVS1328", "WoR-ModManager");
+    static readonly RepoRef CatalogRepo = SelfUpdater.Repo;
     const string CatalogFile = "catalog.txt";
     static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
 
