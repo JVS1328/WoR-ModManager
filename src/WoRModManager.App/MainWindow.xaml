@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:WoRModManager.App.Views"
         Style="{StaticResource AppWindow}" Title="War of Rights Mod Manager"
-        Width="1040" Height="720" MinWidth="680" MinHeight="480" WindowStartupLocation="CenterScreen">
+        Width="1040" Height="720" MinWidth="680" MinHeight="480" WindowStartupLocation="CenterScreen"
+        AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -40,6 +41,20 @@
                     <Border Style="{StaticResource Pill}" Margin="0,0,12,0" ToolTip="Installed War of Rights build (from Steam)">
                         <TextBlock Text="{Binding GameBuild}" Foreground="{StaticResource PillTextBrush}" FontSize="11" />
                     </Border>
+                    <Button x:Name="AddModButton" Content="+ Add mod ▾" Click="AddMod_Click" IsEnabled="{Binding IsIdle}" AutomationProperties.Name="Add mod">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Click="AddFromFile_Click" AutomationProperties.Name="From a zip or .pak">
+                                    <MenuItem.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="From a zip or .pak" FontWeight="SemiBold" />
+                                            <TextBlock Text="A file you already downloaded (or drag it onto the window)" Style="{StaticResource Muted}" />
+                                        </StackPanel>
+                                    </MenuItem.Header>
+                                </MenuItem>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                     <Button Style="{StaticResource IconButton}" Content="&#xE713;" Click="Settings_Click" Margin="4,0,0,0"
                             AutomationProperties.Name="Settings" ToolTip="Settings" />
                 </StackPanel>
@@ -61,6 +76,7 @@
 
         <Grid Grid.Row="4">
             <views:OfficialModsView Visibility="{Binding IsChecked, ElementName=OfficialTab, Converter={StaticResource BoolToVis}}" />
+            <views:LibraryView Visibility="{Binding IsChecked, ElementName=LibraryTab, Converter={StaticResource BoolToVis}}" />
         </Grid>
 
         <!-- Status line -->

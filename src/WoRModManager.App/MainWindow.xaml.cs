@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Controls.Primitives;
+using Microsoft.Win32;
 using WoRModManager.App.ViewModels;
 using WoRModManager.App.Views;
 
@@ -15,4 +17,35 @@ public partial class MainWindow : Window
     MainViewModel Vm => (MainViewModel)DataContext;
 
     void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow(Vm) { Owner = this }.ShowDialog();
+
+    void AddMod_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = AddModButton.ContextMenu;
+        menu.PlacementTarget = AddModButton;
+        menu.Placement = PlacementMode.Bottom;
+        menu.HorizontalOffset = AddModButton.ActualWidth - 270; // right-align with the button (menu is 270 wide)
+        menu.VerticalOffset = 4;
+        menu.IsOpen = true;
+    }
+
+    void AddFromFile_Click(object sender, RoutedEventArgs e)
+    {
+        var d = new OpenFileDialog { Filter = "Mod files (*.zip;*.pak)|*.zip;*.pak", Multiselect = true };
+        if (d.ShowDialog(this) == true) _ = Vm.AddFilesAsync(d.FileNames);
+    }
+
+    static string[] ModFiles(DragEventArgs e) => e.Data.GetData(DataFormats.FileDrop) is string[] files
+        ? [.. files.Where(f => f.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".pak", StringComparison.OrdinalIgnoreCase))]
+        : [];
+
+    void Window_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = ModFiles(e).Length > 0 && Vm.IsIdle ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    void Window_Drop(object sender, DragEventArgs e)
+    {
+        if (ModFiles(e) is { Length: > 0 } files) _ = Vm.AddFilesAsync(files);
+    }
 }

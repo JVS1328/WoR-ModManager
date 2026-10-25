@@ -429,7 +429,7 @@
             <StackPanel>
                 <Button Style="{StaticResource ThumbButton}" Command="{Binding DetailsCommand}"
                         AutomationProperties.Name="{Binding Name, StringFormat=Details for {0}}" ToolTip="Details" />
-                <StackPanel Margin="14,12,14,14">
+                <StackPanel Margin="14,12,14,8">
                     <DockPanel>
                         <Border DockPanel.Dock="Right" Style="{StaticResource Tag}" Visibility="{Binding HasTag, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="{Binding Tag}" FontSize="10" Foreground="{StaticResource MutedBrush}" />
@@ -451,15 +451,30 @@
                         <ProgressBar Style="{StaticResource CardProgress}" Value="{Binding Progress, Mode=OneWay}" VerticalAlignment="Center"
                                      AutomationProperties.Name="Download progress" />
                     </DockPanel>
-                    <DockPanel Margin="0,12,0,0" LastChildFill="False">
-                        <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                    <TextBlock Text="{Binding FilesText}" Style="{StaticResource Muted}" FontFamily="Consolas" Margin="0,8,0,0"
+                               Visibility="{Binding IsUnmanaged, Converter={StaticResource BoolToVis}}" />
+                    <DockPanel Margin="0,12,0,0">
+                        <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding IsEnabled, Mode=TwoWay}" VerticalAlignment="Top" Margin="8,5,0,0"
                                   Visibility="{Binding ShowToggle, Converter={StaticResource BoolToVis}}"
                                   IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=Window}}"
                                   AutomationProperties.Name="{Binding Name, StringFormat=Enable {0}}" ToolTip="Enabled in the game" />
-                        <Button Style="{StaticResource CardPrimaryButton}" Content="{Binding PrimaryActionText}" Command="{Binding PrimaryCommand}"
-                                Visibility="{Binding ShowPrimary, Converter={StaticResource BoolToVis}}" Margin="0,0,8,0" />
-                        <Button Style="{StaticResource LinkButton}" Content="View on Nexus" Command="{Binding NexusCommand}"
-                                Visibility="{Binding HasNexus, Converter={StaticResource BoolToVis}}" />
+                        <WrapPanel>
+                            <WrapPanel.Resources>
+                                <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
+                                    <Setter Property="Margin" Value="0,0,8,6" />
+                                </Style>
+                            </WrapPanel.Resources>
+                            <Button Style="{StaticResource CardPrimaryButton}" Content="{Binding PrimaryActionText}" Command="{Binding PrimaryCommand}"
+                                    Visibility="{Binding ShowPrimary, Converter={StaticResource BoolToVis}}" Margin="0,0,8,6" />
+                            <Button Content="{Binding ManageOfficialText}" Command="{Binding ManageOfficialCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,6"
+                                    Visibility="{Binding HasManageOfficial, Converter={StaticResource BoolToVis}}" />
+                            <Button Content="Manage as new mod" Command="{Binding ManageNewCommand}"
+                                    Visibility="{Binding HasManageNew, Converter={StaticResource BoolToVis}}" />
+                            <Button Content="Uninstall" Command="{Binding UninstallCommand}"
+                                    Visibility="{Binding ShowUninstall, Converter={StaticResource BoolToVis}}" />
+                            <Button Style="{StaticResource LinkButton}" Content="View on Nexus" Command="{Binding NexusCommand}" Margin="0,0,0,6"
+                                    Visibility="{Binding HasNexus, Converter={StaticResource BoolToVis}}" />
+                        </WrapPanel>
                     </DockPanel>
                 </StackPanel>
             </StackPanel>

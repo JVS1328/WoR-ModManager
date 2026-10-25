@@ -25,6 +25,8 @@ public sealed class ModCardViewModel : ObservableObject
         NexusCommand = new RelayCommand(_ => MainViewModel.OpenUrl(NexusUrl!), _ => NexusUrl is not null);
         DetailsCommand = new RelayCommand(_ => owner.ShowDetails(this));
         UninstallCommand = new RelayCommand(_ => _ = owner.UninstallAsync(this), _ => owner.IsIdle && Record is not null);
+        ManageOfficialCommand = new RelayCommand(_ => _ = owner.AdoptAsync(this, Match), _ => owner.IsIdle && Match is not null);
+        ManageNewCommand = new RelayCommand(_ => _ = owner.AdoptAsync(this, null), _ => owner.IsIdle && IsUnmanaged);
     }
 
     public string Key { get; }
@@ -39,21 +41,30 @@ public sealed class ModCardViewModel : ObservableObject
     public ICommand NexusCommand { get; }
     public ICommand DetailsCommand { get; }
     public ICommand UninstallCommand { get; }
+    public ICommand ManageOfficialCommand { get; }
+    public ICommand ManageNewCommand { get; }
 
-    public string Name => Record?.Name ?? Official?.Name ?? Key;
+    public bool IsUnmanaged => Entry?.Status == ModStatus.Unmanaged;
+    public string Name => IsUnmanaged ? "Unmanaged files" : Record?.Name ?? Official?.Name ?? Key;
     public string? Version => Record is { } r ? r.Version : Official?.Release?.Tag;
     public Brush Placeholder => Placeholders[Key.Sum(c => c) % Placeholders.Length];
 
     long ReleaseBytes => Official?.Release?.Assets.Where(a => PakNames.IsModPak(a.Name)).Sum(a => a.Size) ?? 0;
-    public string Meta => string.Join(" · ", new[] { Version, ReleaseBytes > 0 ? Mb(ReleaseBytes) : null }.OfType<string>());
+    int FileCount => IsUnmanaged ? Entry!.UnmanagedPaks.Count : Record?.Paks.Count ?? 0;
+    public string Meta => string.Join(" · ", new[]
+    {
+        Version,
+        ReleaseBytes > 0 ? Mb(ReleaseBytes) : FileCount > 0 ? $"{FileCount} file{(FileCount == 1 ? "" : "s")}" : null,
+    }.OfType<string>());
 
     public string StatusText => Entry?.Status switch
     {
         null => Official?.Release is null ? "No release published yet" : "Not installed",
-        ModStatus.UpToDate => "Up to date",
+        ModStatus.UpToDate => Record?.Source == ModSource.Imported || Official is null ? "Installed" : "Up to date",
         ModStatus.UpdateAvailable => "Update available",
         ModStatus.Repair => "Some files are changed or missing",
         ModStatus.FilesMissing => "Files missing",
+        ModStatus.Unmanaged => "Mod files in the game that the manager doesn't own yet. Nothing changes until you choose.",
         _ => "",
     };
 
@@ -85,7 +96,15 @@ public sealed class ModCardViewModel : ObservableObject
     public bool HasOverlapWarning => OverlapWarning is not null;
 
     public bool HasTag => inLibrary;
-    public string Tag => Record?.Source == ModSource.Imported ? "Imported" : "Official";
+    public string Tag => IsUnmanaged ? "Unmanaged" : Record?.Source == ModSource.Imported ? "Imported" : "Official";
+    public bool ShowUninstall => inLibrary && Record is not null;
+
+    // Unmanaged card
+    public string FilesText => IsUnmanaged ? string.Join("\n", Entry!.UnmanagedPaks) : "";
+    public OfficialMod? Match { get; private set; }
+    public string ManageOfficialText => Match is { } m ? $"Manage as {m.Name}" : "";
+    public bool HasManageOfficial => Match is not null;
+    public bool HasManageNew => IsUnmanaged && Match is null; // never compete with a matching official mod
 
     // Details window
     public string Blurb => Official?.Description.Blurb is { Length: > 0 } b ? b : "No description.";
@@ -102,8 +121,9 @@ public sealed class ModCardViewModel : ObservableObject
     bool isDownloading;
     public bool IsDownloading { get => isDownloading; set { if (Set(ref isDownloading, value)) { Progress = 0; ProgressText = ""; } } }
 
-    internal void Update(OfficialMod? official, LibraryEntry? entry, BitmapImage? thumbnail, string? build, string? overlapWarning)
+    internal void Update(OfficialMod? official, LibraryEntry? entry, BitmapImage? thumbnail, string? build, string? overlapWarning, OfficialMod? match)
     {
+        Match = match;
         Official = official;
         Entry = entry;
         Thumbnail = thumbnail;
