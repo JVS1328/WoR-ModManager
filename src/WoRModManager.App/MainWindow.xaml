@@ -35,6 +35,8 @@
         <!-- Top bar -->
         <Border Grid.Row="1" Background="{StaticResource BarBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="20,0,12,0">
             <DockPanel>
+                <Image DockPanel.Dock="Left" Source="pack://application:,,,/logo.png" Width="26" Height="26" Margin="0,0,10,0"
+                       VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" AutomationProperties.Name="WoR Mod Manager logo" />
                 <TextBlock DockPanel.Dock="Left" Text="WoR MOD MANAGER" Foreground="{StaticResource GoldBrush}" FontSize="14" FontWeight="Bold"
                            VerticalAlignment="Center" Margin="0,0,32,0" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">

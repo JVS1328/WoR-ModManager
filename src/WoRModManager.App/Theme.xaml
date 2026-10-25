@@ -38,6 +38,7 @@
         <Setter Property="FontFamily" Value="Segoe UI" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="UseLayoutRounding" Value="True" />
+        <Setter Property="Icon" Value="pack://application:,,,/app.ico" />
     </Style>
 
     <!-- Buttons: gold primary by default -->
