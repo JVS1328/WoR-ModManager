@@ -77,4 +77,8 @@ public class OverlapDetectorTests : IDisposable
     [Fact] public void Message_UsesSpecCopy() =>
         Assert.Equal("MAW and 1812 both change 2 game files, mainly objects/characters. Running both may break the game visually or functionally.",
             Overlap.Message("MAW", "1812", new("a", "b", 2, ["objects/characters"])));
+
+    [Fact] public void Message_OneFileAtRoot_SingularWithoutFolders() =>
+        Assert.Equal("MAW and 1812 both change 1 game file. Running both may break the game visually or functionally.",
+            Overlap.Message("MAW", "1812", new("a", "b", 1, [])));
 }

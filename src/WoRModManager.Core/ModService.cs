@@ -1,3 +1,4 @@
+using System.Text.Json;
 using WoRModManager.Core.GitHub;
 using WoRModManager.Core.Install;
 using WoRModManager.Core.State;
@@ -50,9 +51,9 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
             return new OfficialMod(repo, DisplayName(repo.Repo), desc, thumb, rel, await AssetText("changelog.txt"),
                 Catalog.ParseGameBuild(await AssetText("gamebuild.txt")));
         }
-        catch (Exception e) when (e is GitHubUnavailableException or InvalidDataException)
+        catch (Exception e) when (e is GitHubUnavailableException or InvalidDataException or JsonException or KeyNotFoundException or InvalidOperationException)
         {
-            return null; // one unreachable or oversized mod must not hide the rest of the catalog
+            return null; // one unreachable, oversized or malformed mod must not hide the rest of the catalog
         }
     }
 
@@ -88,7 +89,9 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
             ? Directory.EnumerateFiles(paths.Assets, "z*.pak").Select(Path.GetFileName).OfType<string>()
                 .Where(n => PakNames.IsModPak(n) && StateStore.OwnerOf(mods, n) is null).Order(Ci).ToList()
             : [];
-        if (unmanaged.Count > 0) entries.Add(new(null, null, ModStatus.Unmanaged, null, false, unmanaged));
+        // One card per prefix group (a pak without a prefix is its own), so each can be managed on its own.
+        foreach (var g in unmanaged.GroupBy(n => PakNames.Prefix(n) ?? n, Ci))
+            entries.Add(new(null, null, ModStatus.Unmanaged, null, false, [.. g]));
         return entries;
     }
 
@@ -106,7 +109,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         var unowned = plan.ToDownload.Select(a => a.Name).Where(n => StateStore.OwnerOf(mods, n) is null && File.Exists(Path.Combine(loc, n))).ToList();
         if (unowned.Count > 0 && !allowOverwriteUnmanaged) throw new UnmanagedFilesException(unowned);
 
-        var stage = Path.Combine(paths.Staging, rec.Id.Replace('/', '_'));
+        var stage = StageDir(rec);
         var staged = new Dictionary<string, string>(Ci);
         long done = 0;
         foreach (var a in plan.ToDownload)
@@ -173,6 +176,8 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         var r = Find(mods, modId);
         var loc = Location(r);
         foreach (var n in r.Paks) File.Delete(Path.Combine(loc, n));
+        foreach (var dir in new[] { paths.DisabledDir(r.Id), StageDir(r) })
+            if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
         mods.Remove(r);
         store.Save(mods);
     }
@@ -223,6 +228,8 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         foreach (var f in Directory.GetFiles(paths.Staging, "*.part", SearchOption.AllDirectories))
             if (File.GetLastWriteTimeUtc(f) < DateTime.UtcNow.AddDays(-7)) File.Delete(f);
     }
+
+    string StageDir(ModRecord r) => Path.Combine(paths.Staging, r.Id.Replace('/', '_'));
 
     ModRecord Find(List<ModRecord> mods, string modId) =>
         mods.FirstOrDefault(m => Ci.Equals(m.Id, modId)) ?? throw new InvalidOperationException($"No installed mod {modId}.");

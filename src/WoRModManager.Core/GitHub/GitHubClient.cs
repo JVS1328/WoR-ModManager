@@ -9,6 +9,7 @@ namespace WoRModManager.Core.GitHub;
 public class GitHubClient
 {
     private const long MaxAssetTextBytes = 1 << 20;
+    internal static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(60);
     private readonly HttpClient _http;
     private readonly string _cacheDir;
     private static readonly string Version =
@@ -59,6 +60,14 @@ public class GitHubClient
     public async Task<string?> GetAssetTextAsync(ReleaseAsset asset, CancellationToken ct) =>
         (await FetchAsync(asset.DownloadUrl.ToString(), api: false, (int)MaxAssetTextBytes, ct)).Body is { } b ? Encoding.UTF8.GetString(b) : null;
 
+    // HttpClient.Timeout stops at the headers; without this a stalled body read would wait forever.
+    internal static async ValueTask<int> ReadOrStallAsync(Stream s, Memory<byte> buf, CancellationTokenSource idle, TimeSpan timeout, CancellationToken ct)
+    {
+        idle.CancelAfter(timeout);
+        try { return await s.ReadAsync(buf, idle.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new HttpRequestException("The connection stalled."); }
+    }
+
     private static string Str(JsonElement e, string name) =>
         e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
 
@@ -92,8 +101,16 @@ public class GitHubClient
             resp.EnsureSuccessStatusCode();
 
             if (resp.Content.Headers.ContentLength > maxBytes) throw new InvalidDataException($"Response too large: {url}");
-            var body = await resp.Content.ReadAsByteArrayAsync(ct);
-            if (body.Length > maxBytes) throw new InvalidDataException($"Response too large: {url}");
+            await using var src = await resp.Content.ReadAsStreamAsync(ct);
+            using var ms = new MemoryStream();
+            using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var buf = new byte[81920];
+            for (int n; (n = await ReadOrStallAsync(src, buf, idle, IdleTimeout, ct)) > 0;)
+            {
+                ms.Write(buf, 0, n);
+                if (ms.Length > maxBytes) throw new InvalidDataException($"Response too large: {url}");
+            }
+            var body = ms.ToArray();
             await File.WriteAllBytesAsync(bodyFile, body, ct);
             if (resp.Headers.ETag is { } et) await File.WriteAllTextAsync(etagFile, et.ToString(), ct);
             else File.Delete(etagFile);

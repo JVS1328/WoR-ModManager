@@ -16,10 +16,13 @@ public class Downloader(HttpMessageHandler handler)
     // R2: the handler is shared with GitHubClient, so we must not dispose it.
     private readonly HttpClient _http = new(handler, disposeHandler: false);
 
+    public TimeSpan IdleTimeout { get; init; } = GitHubClient.IdleTimeout;
+
     public async Task DownloadAsync(ReleaseAsset asset, string destPath, IProgress<DownloadProgress>? progress, CancellationToken ct)
     {
         var part = destPath + ".part";
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destPath))!);
+        if (asset.Sha256 is null) File.Delete(part); // nothing could tell a stale leftover from the current asset
         for (var attempt = 0; ; attempt++)
         {
             await FetchAsync(asset, part, progress, ct);
@@ -45,8 +48,9 @@ public class Downloader(HttpMessageHandler handler)
         var buf = new byte[BufferSize];
         var clock = Stopwatch.StartNew();
         long fresh = 0, lastReportMs = 0;
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
         int n;
-        while ((n = await src.ReadAsync(buf, ct)) > 0)
+        while ((n = await GitHubClient.ReadOrStallAsync(src, buf, idle, IdleTimeout, ct)) > 0)
         {
             await dst.WriteAsync(buf.AsMemory(0, n), ct);
             done += n;

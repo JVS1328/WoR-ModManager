@@ -14,6 +14,12 @@ public static partial class SteamLocator
 
     public static string? FindGameRoot()
     {
+        try { return FindGameRootCore(); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    static string? FindGameRootCore()
+    {
         var steam = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string;
         if (steam is null) return null;
         steam = steam.Replace('/', '\\');
@@ -32,7 +38,8 @@ public static partial class SteamLocator
     public static string? ReadBuildId(string gameRoot)
     {
         var manifest = Path.GetFullPath(Path.Combine(gameRoot, "..", "..", $"appmanifest_{AppId}.acf"));
-        return File.Exists(manifest) ? ParseBuildId(File.ReadAllText(manifest)) : null;
+        try { return File.Exists(manifest) ? ParseBuildId(File.ReadAllText(manifest)) : null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
     }
 
     static string? KeyValue(string text, string key) =>

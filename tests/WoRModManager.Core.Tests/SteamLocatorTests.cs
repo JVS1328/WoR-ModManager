@@ -24,4 +24,17 @@ public class SteamLocatorTests
         }
         finally { Directory.Delete(steamapps, true); }
     }
+
+    [Fact] public void ReadBuildId_UnreadableManifest_ReturnsNull()
+    {
+        var steamapps = Directory.CreateTempSubdirectory("wormm").FullName;
+        try
+        {
+            var manifest = Path.Combine(steamapps, "appmanifest_424030.acf");
+            File.WriteAllText(manifest, "\"buildid\"\t\t\"42\"");
+            using (new FileStream(manifest, FileMode.Open, FileAccess.Read, FileShare.None))
+                Assert.Null(SteamLocator.ReadBuildId(Path.Combine(steamapps, "common", "War of Rights")));
+        }
+        finally { Directory.Delete(steamapps, true); }
+    }
 }

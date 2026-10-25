@@ -31,8 +31,17 @@ public partial class App : Application
         }
     }
 
+    static Mutex? instance; // held for the app's lifetime
+
     void Start(string[] args)
     {
+        // An updated or elevated copy is started by one that is still exiting, so it waits for it briefly.
+        if (!TakeInstanceLock(wait: args.Contains("--cleanup-old") || args.Contains("--relaunch")))
+        {
+            PromptWindow.Show("The mod manager is already running.");
+            Shutdown();
+            return;
+        }
         if (args.Contains("--cleanup-old")) SelfUpdater.CleanupOld(Environment.ProcessPath!);
         var saved = SettingsStore.Load(MainViewModel.SettingsFile);
         var root = saved.GameRoot is { } r && GamePaths.IsValidGameRoot(r) ? r : DetectGameRoot() ?? SettingsWindow.PickGameRoot();
@@ -53,11 +62,14 @@ public partial class App : Application
         _ = vm.StartAsync();
     }
 
-    internal static string? DetectGameRoot()
+    static bool TakeInstanceLock(bool wait)
     {
-        try { return SteamLocator.FindGameRoot() is { } f && GamePaths.IsValidGameRoot(f) ? f : null; }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+        instance = new Mutex(false, "WoRModManager.SingleInstance");
+        try { return instance.WaitOne(wait ? TimeSpan.FromSeconds(10) : TimeSpan.Zero); }
+        catch (AbandonedMutexException) { return true; } // the previous copy exited without releasing it; it is ours now
     }
+
+    internal static string? DetectGameRoot() => SteamLocator.FindGameRoot() is { } f && GamePaths.IsValidGameRoot(f) ? f : null;
 
     public static void ShowError(Exception e)
     {
@@ -79,7 +91,7 @@ public partial class App : Application
     {
         try
         {
-            Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas" })?.Dispose();
+            Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--relaunch") { UseShellExecute = true, Verb = "runas" })?.Dispose();
         }
         catch (Win32Exception)
         {

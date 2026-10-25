@@ -387,4 +387,60 @@ public class ModServiceTests
         Assert.True(File.Exists(Path.Combine(f.P.Staging, "JVS1328_WoR-MAW-releases", "z_maw_A.pak")));
         Assert.Empty(f.State);
     }
+
+    [Fact] public async Task Refresh_UnmanagedPaks_OneEntryPerPrefixGroup()
+    {
+        using var f = new Fixture();
+        foreach (var n in new[] { "z_maw_a.pak", "z_maw_b.pak", "zBlackPowder.pak" }) f.G.WritePak(n, B(n));
+
+        var lib = await f.Svc.RefreshLibraryAsync([], default);
+
+        Assert.All(lib, e => Assert.Equal(ModStatus.Unmanaged, e.Status));
+        Assert.Equal([["zBlackPowder.pak"], ["z_maw_a.pak", "z_maw_b.pak"]], lib.Select(e => e.UnmanagedPaks.ToArray()).OrderBy(p => p[0], StringComparer.Ordinal));
+    }
+
+    [Fact] public void Adopt_Imported_UsesImporterSlugId()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("z_a.pak", B("a"));
+        Assert.Equal("imported/my-mod", f.Svc.Adopt(["z_a.pak"], null, "My mod").Id);
+    }
+
+    [Fact] public void Uninstall_DisabledMod_RemovesEmptyModFolders()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("z_a.pak", B("a"));
+        var r = f.Svc.Adopt(["z_a.pak"], null, "Mine");
+        f.Svc.SetEnabled(r.Id, false);
+        var stage = Path.Combine(f.P.Staging, "imported_mine");
+        Directory.CreateDirectory(stage);
+
+        f.Svc.Uninstall(r.Id);
+
+        Assert.False(Directory.Exists(f.P.DisabledDir(r.Id)));
+        Assert.False(Directory.Exists(stage));
+    }
+
+    [Fact] public async Task LoadCatalog_MalformedReleaseJson_SkipsOnlyThatMod()
+    {
+        using var g = new TempGame();
+        var raw = "https://raw.githubusercontent.com/JVS1328/";
+        var http = new StubHttpHandler(req =>
+        {
+            var u = req.RequestUri!.ToString();
+            HttpResponseMessage Text(string s) => new(HttpStatusCode.OK) { Content = new StringContent(s) };
+            return u switch
+            {
+                _ when u == raw + "WoR-ModManager/HEAD/catalog.txt" => Text(
+                    "https://github.com/JVS1328/WoR-Torn-releases\nhttps://github.com/JVS1328/WoR-NoName-releases\nhttps://github.com/JVS1328/WoR-MAW-releases\n"),
+                _ when u.EndsWith("WoR-Torn-releases/releases/latest") => Text("{ torn"),
+                _ when u.EndsWith("WoR-NoName-releases/releases/latest") => Text("""{"tag_name":"v1","assets":[{"size":3}]}"""),
+                _ when u.EndsWith("WoR-MAW-releases/releases/latest") => Text("""{"tag_name":"v1","assets":[]}"""),
+                _ => new(HttpStatusCode.NotFound),
+            };
+        });
+        var svc = new ModService(g.Paths, new GitHubClient(http, Path.Combine(g.Root, "cache")), new Downloader(http), () => false);
+
+        Assert.Equal(MawId, Assert.Single((await svc.LoadCatalogAsync(default)).Mods).Repo.Id);
+    }
 }

@@ -89,4 +89,34 @@ public class DownloaderTests
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
+
+    [Fact] public async Task Download_StalledConnection_ThrowsNetworkError_KeepsPart()
+    {
+        var stub = new StubHttpHandler(_ => Ok(new StallingStream(Data[..5])));
+        var dest = Dest();
+        var d = new Downloader(stub) { IdleTimeout = TimeSpan.FromMilliseconds(200) };
+        await Assert.ThrowsAsync<HttpRequestException>(() => d.DownloadAsync(Asset, dest, null, default));
+        Assert.Equal(5, new FileInfo(dest + ".part").Length);
+    }
+
+    [Fact] public async Task Download_NoDigest_DiscardsLeftoverPart()
+    {
+        var stub = new StubHttpHandler(_ => Ok(new MemoryStream(Data)));
+        var dest = Dest();
+        File.WriteAllText(dest + ".part", "XXXXX");
+        await new Downloader(stub).DownloadAsync(Asset with { Sha256 = null }, dest, null, default);
+        Assert.Equal(Data, File.ReadAllBytes(dest));
+        Assert.Null(stub.Requests.Single().Headers.Range);
+    }
+
+    // Yields the given bytes, then never answers again until the read is cancelled.
+    private sealed class StallingStream(byte[] data) : MemoryStream(data)
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            if (Position < Length) return await base.ReadAsync(buffer, ct);
+            await Task.Delay(Timeout.Infinite, ct);
+            return 0;
+        }
+    }
 }

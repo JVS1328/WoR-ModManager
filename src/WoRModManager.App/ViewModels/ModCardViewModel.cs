@@ -72,11 +72,12 @@ public sealed class ModCardViewModel : ObservableObject
     public string PrimaryActionText => Entry?.Status switch
     {
         null => "Install",
-        ModStatus.UpdateAvailable => $"Update · {Mb(Entry.Plan?.DownloadBytes ?? 0)}",
+        ModStatus.UpdateAvailable => $"Update · {UpdatePaks} pak{(UpdatePaks == 1 ? "" : "s")} · {Mb(Entry.Plan?.DownloadBytes ?? 0)}",
         ModStatus.Repair => "Repair",
         _ => "Installed",
     };
 
+    int UpdatePaks => Entry?.Plan?.ToDownload.Count ?? 0;
     bool CanPrimary => Official?.Release is not null && Entry?.Status is null or ModStatus.UpdateAvailable or ModStatus.Repair;
     public bool ShowPrimary => inLibrary ? CanPrimary && Entry is not null : Entry?.Status is not ModStatus.FilesMissing;
     public bool IsUpdate => Entry?.Status == ModStatus.UpdateAvailable;

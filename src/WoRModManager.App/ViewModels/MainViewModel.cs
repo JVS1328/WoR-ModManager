@@ -37,6 +37,7 @@ public sealed class MainViewModel : ObservableObject
     IReadOnlyList<LibraryEntry> library = [];
     CancellationTokenSource cts = new();
     string? installedBuild;
+    bool recoverPending;
 
     public MainViewModel(GamePaths paths)
     {
@@ -97,7 +98,7 @@ public sealed class MainViewModel : ObservableObject
         Paths = p;
         service = new ModService(p, gh, dl, IsGameRunning);
         reshade = new ReShadeService(p);
-        service.RecoverIfNeeded();
+        recoverPending = true; // done by the next library load, off the UI thread while busy
         installedBuild = SteamLocator.ReadBuildId(p.GameRoot);
         GameBuild = installedBuild is { } b ? $"Game build {b}" : "Game build unknown";
     }
@@ -171,9 +172,15 @@ public sealed class MainViewModel : ObservableObject
     {
         var cat = catalog;
         var paths = Paths;
+        var svc = service;
         (library, var found) = await Task.Run(async () =>
         {
-            var lib = await service.RefreshLibraryAsync(cat, CancellationToken.None);
+            if (recoverPending)
+            {
+                svc.RecoverIfNeeded(); // an interrupted install is undone before anything reads or writes the game
+                recoverPending = false;
+            }
+            var lib = await svc.RefreshLibraryAsync(cat, CancellationToken.None);
             return (lib, overlaps.Find([.. Records(lib).Where(r => r.Enabled)], paths));
         });
 
@@ -190,7 +197,7 @@ public sealed class MainViewModel : ObservableObject
 
         Sync(Official, false, catalog.Select(m => (m.Repo.Id, (OfficialMod?)m,
             library.FirstOrDefault(e => e.Record is { Source: ModSource.Official } r && Ci.Equals(r.RepoId, m.Repo.Id)))), OverlapText);
-        Sync(Library, true, library.Select(e => (e.Record?.Id ?? "unmanaged", e.Official, (LibraryEntry?)e)), OverlapText);
+        Sync(Library, true, library.Select(e => (e.Record?.Id ?? "unmanaged:" + e.UnmanagedPaks[0], e.Official, (LibraryEntry?)e)), OverlapText);
         ReShade.Reload(reshade);
         CommandManager.InvalidateRequerySuggested();
     }
@@ -250,6 +257,7 @@ public sealed class MainViewModel : ObservableObject
         if (card.Entry?.Plan?.ToRemove is { Count: > 0 } removed
             && !PromptWindow.Ask($"This update deletes these files from the game:\n\n{string.Join("\n", removed)}", "Update"))
             return;
+        var fresh = card.Record is null;
         card.IsDownloading = true;
         try
         {
@@ -266,7 +274,17 @@ public sealed class MainViewModel : ObservableObject
         {
             card.IsDownloading = false;
         }
+        // A fresh install is enabled, so it gets the same overlap warning as enabling; the paks exist only now.
+        if (fresh && new StateStore(Paths).Load().FirstOrDefault(m => m.Source == ModSource.Official && Ci.Equals(m.RepoId, card.Official!.Repo.Id)) is { } r)
+        {
+            var enabled = Records(library).Where(m => m.Enabled).ToList();
+            var found = await Task.Run(() => overlaps.FindFor(r, enabled, Paths), ct);
+            if (found.Count > 0 && !PromptWindow.Ask(OverlapPrompt(r, found), "Keep enabled", "Disable"))
+                await Task.Run(() => service.SetEnabled(r.Id, false), ct);
+        }
     });
+
+    string OverlapPrompt(ModRecord r, IEnumerable<Overlap> found) => string.Join("\n\n", found.Select(o => Overlap.Message(r.Name, NameOf(o.ModB), o)));
 
     internal async Task SetEnabledAsync(ModCardViewModel card, bool on)
     {
@@ -279,7 +297,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 var enabled = Records(library).Where(m => m.Enabled).ToList();
                 var found = await Task.Run(() => overlaps.FindFor(r, enabled, Paths), ct);
-                if (found.Count > 0 && !PromptWindow.Ask(string.Join("\n\n", found.Select(o => Overlap.Message(r.Name, NameOf(o.ModB), o))), "Enable anyway"))
+                if (found.Count > 0 && !PromptWindow.Ask(OverlapPrompt(r, found), "Enable anyway"))
                     return;
             }
             await Task.Run(() => service.SetEnabled(r.Id, on), ct);

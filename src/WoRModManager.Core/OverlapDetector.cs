@@ -7,7 +7,7 @@ namespace WoRModManager.Core;
 public record Overlap(string ModA, string ModB, int FileCount, IReadOnlyList<string> TopFolders)
 {
     public static string Message(string nameA, string nameB, Overlap o) => string.Create(CultureInfo.InvariantCulture,
-        $"{nameA} and {nameB} both change {o.FileCount:N0} game files, mainly {string.Join(", ", o.TopFolders)}. Running both may break the game visually or functionally.");
+        $"{nameA} and {nameB} both change {o.FileCount:N0} game file{(o.FileCount == 1 ? "" : "s")}{(o.TopFolders.Count > 0 ? ", mainly " + string.Join(", ", o.TopFolders) : "")}. Running both may break the game visually or functionally.");
 }
 
 public class OverlapDetector
