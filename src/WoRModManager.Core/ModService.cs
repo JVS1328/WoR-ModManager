@@ -12,6 +12,12 @@ public record LibraryEntry(ModRecord? Record, OfficialMod? Official, ModStatus S
 
 public class GameRunningException() : Exception("Close War of Rights first.");
 
+public class UnmanagedFilesException(IReadOnlyList<string> names)
+    : Exception($"These files are already in the game but no mod owns them: {string.Join(", ", names)}")
+{
+    public IReadOnlyList<string> Names { get; } = names;
+}
+
 public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bool> isGameRunning)
 {
     static readonly RepoRef CatalogRepo = new("JVS1328", "WoR-ModManager");
@@ -62,7 +68,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         var mods = store.Load();
         var build = SteamLocator.ReadBuildId(paths.GameRoot);
         var entries = new List<LibraryEntry>();
-        foreach (var r in mods)
+        foreach (var r in mods.Where(IsSafe)) // a damaged record is left alone rather than hiding the whole library
         {
             var loc = Location(r);
             var off = r.Source == ModSource.Official ? official.FirstOrDefault(o => Ci.Equals(o.Repo.Id, r.RepoId)) : null;
@@ -86,7 +92,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         return entries;
     }
 
-    public async Task InstallOrUpdateAsync(OfficialMod mod, IProgress<DownloadProgress>? progress, CancellationToken ct)
+    public async Task InstallOrUpdateAsync(OfficialMod mod, IProgress<DownloadProgress>? progress, bool allowOverwriteUnmanaged, CancellationToken ct)
     {
         if (isGameRunning()) throw new GameRunningException();
         var rel = mod.Release ?? throw new InvalidOperationException($"{mod.Name} has no release to install.");
@@ -97,6 +103,8 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         var loc = Location(rec);
         var plan = await PlanAsync(rec, rel, loc, ct);
         ThrowIfConflict(mods, rec, loc, plan.ToDownload.Select(a => a.Name));
+        var unowned = plan.ToDownload.Select(a => a.Name).Where(n => StateStore.OwnerOf(mods, n) is null && File.Exists(Path.Combine(loc, n))).ToList();
+        if (unowned.Count > 0 && !allowOverwriteUnmanaged) throw new UnmanagedFilesException(unowned);
 
         var stage = Path.Combine(paths.Staging, rec.Id.Replace('/', '_'));
         var staged = new Dictionary<string, string>(Ci);
@@ -111,6 +119,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
             done += a.Size;
         }
 
+        if (isGameRunning()) throw new GameRunningException(); // it may have started during the download; staging is kept
         Directory.CreateDirectory(loc);
         InstallTransaction.Commit(paths, loc, staged, plan.ToRemove);
         rec.Version = rel.Tag;
@@ -145,13 +154,13 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         {
             foreach (var n in r.Paks.Where(n => File.Exists(Path.Combine(from, n))))
             {
-                File.Move(Path.Combine(from, n), Path.Combine(to, n));
+                InstallTransaction.Move(Path.Combine(from, n), Path.Combine(to, n), viaTmp: true);
                 moved.Add(n);
             }
         }
         catch
         {
-            foreach (var n in moved) File.Move(Path.Combine(to, n), Path.Combine(from, n)); // don't leave a mod split across folders
+            foreach (var n in moved) InstallTransaction.Move(Path.Combine(to, n), Path.Combine(from, n), viaTmp: true); // don't leave a mod split across folders
             throw;
         }
         store.Save(mods);
@@ -219,18 +228,17 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         mods.FirstOrDefault(m => Ci.Equals(m.Id, modId)) ?? throw new InvalidOperationException($"No installed mod {modId}.");
 
     // state.json and the catalog are untrusted input: ids become folder names and pak names become file paths.
-    string Location(ModRecord r)
-    {
-        if (r.Id.Length == 0 || r.Id.Contains("..") || r.Id.Replace('/', '_').IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
-            || !r.Paks.All(PakNames.IsSafePakName))
-            throw new InvalidDataException($"Unsafe mod record: {r.Id}");
-        return r.Location(paths);
-    }
+    // IsModPak, not just a safe name: a tampered record must never make Uninstall delete a vanilla pak.
+    static bool IsSafe(ModRecord r) =>
+        !string.IsNullOrEmpty(r.Id) && !r.Id.Contains("..") && r.Id.Replace('/', '_').IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+        && r.Paks.All(PakNames.IsModPak);
+
+    string Location(ModRecord r) => IsSafe(r) ? r.Location(paths) : throw new InvalidDataException($"Unsafe mod record: {r.Id}");
 
     void ThrowIfConflict(List<ModRecord> mods, ModRecord self, string dir, IEnumerable<string> names)
     {
         foreach (var n in names)
-            if (mods.FirstOrDefault(m => m != self && m.Paks.Contains(n, Ci) && Ci.Equals(Location(m), dir)) is { } other
+            if (mods.FirstOrDefault(m => m != self && m.Paks.Contains(n, Ci) && Ci.Equals(m.Location(paths), dir)) is { } other
                 && File.Exists(Path.Combine(dir, n)))
                 throw new InvalidOperationException($"{n} is already used by {other.Name}.");
     }

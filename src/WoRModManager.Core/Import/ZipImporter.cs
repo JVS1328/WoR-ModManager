@@ -14,7 +14,7 @@ public static class ZipImporter
     static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
     const long MaxIniBytes = 1 << 20;
 
-    public static ImportAnalysis Analyze(string path, IReadOnlyList<ModRecord> mods, IReadOnlyList<OfficialMod> official)
+    public static ImportAnalysis Analyze(string path, IReadOnlyList<ModRecord> mods, IReadOnlyList<OfficialMod> official, GamePaths p)
     {
         List<string> names;
         var preset = false;
@@ -26,9 +26,15 @@ public static class ZipImporter
             preset = names.Count == 0 && z.Entries.Where(IsSafe).Any(IsPresetIni);
         }
 
-        ImportAnalysis Result(ImportKind k, string? target = null, OfficialMod? o = null) =>
-            new(k, names, target, o, Path.GetFileNameWithoutExtension(path).Replace('_', ' ').Replace('-', ' '),
-                names.Where(n => mods.Any(m => !Ci.Equals(m.Id, target) && m.Paks.Contains(n, Ci))).ToList());
+        ImportAnalysis Result(ImportKind k, string? target = null, OfficialMod? o = null)
+        {
+            var dir = mods.FirstOrDefault(m => Ci.Equals(m.Id, target))?.Location(p) ?? p.Assets;
+            var rel = o is null ? null : ModService.ReleasePaks(o); // non-release names go to Assets as their own mod (see Apply)
+            bool OverwritesUnowned(string n) =>
+                StateStore.OwnerOf(mods, n) is null && File.Exists(Path.Combine(rel is null || rel.Contains(n, Ci) ? dir : p.Assets, n));
+            return new(k, names, target, o, Path.GetFileNameWithoutExtension(path).Replace('_', ' ').Replace('-', ' '),
+                names.Where(n => mods.Any(m => !Ci.Equals(m.Id, target) && m.Paks.Contains(n, Ci)) || OverwritesUnowned(n)).ToList());
+        }
 
         if (names.Count == 0) return Result(preset ? ImportKind.ReShadePreset : ImportKind.Nothing);
         if (ModService.MatchOfficial(names, official) is { } off) return Result(ImportKind.AdoptOfficial, off.Repo.Id, off);

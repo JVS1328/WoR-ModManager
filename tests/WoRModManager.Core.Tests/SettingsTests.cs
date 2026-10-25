@@ -44,4 +44,28 @@ public class SettingsTests : IDisposable
         File.WriteAllText(Path.Combine(b, "z"), "");
         Assert.Throws<InvalidOperationException>(() => ModsFolderMover.Move(a, b));
     }
+
+    [Fact] public void ModsFolderMover_MovesStateFilesLast()
+    {
+        var a = Path.Combine(_dir, "a"); var b = Path.Combine(_dir, "b");
+        Directory.CreateDirectory(Path.Combine(a, "Disabled"));
+        foreach (var n in new[] { "state.json", "hashcache.json", "journal.json", Path.Combine("Disabled", "z.pak") })
+            File.WriteAllText(Path.Combine(a, n), n);
+        var order = new List<string>();
+        ModsFolderMover.Move(a, b, order.Add);
+        Assert.Equal(["hashcache.json", "state.json"], order[^2..]);
+        Assert.Equal(4, order.Count);
+    }
+
+    [Fact] public void ModsFolderMover_FailureMidMove_MovesEverythingBack()
+    {
+        var a = Path.Combine(_dir, "a"); var b = Path.Combine(_dir, "b");
+        Directory.CreateDirectory(Path.Combine(a, "d"));
+        string[] names = ["x.pak", Path.Combine("d", "y.pak"), "state.json", "hashcache.json"];
+        foreach (var n in names) File.WriteAllText(Path.Combine(a, n), n);
+        var moves = 0;
+        Assert.Throws<IOException>(() => ModsFolderMover.Move(a, b, _ => { if (++moves == 3) throw new IOException("disk full"); }));
+        foreach (var n in names) Assert.Equal(n, File.ReadAllText(Path.Combine(a, n)));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(b));
+    }
 }

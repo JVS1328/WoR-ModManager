@@ -23,7 +23,7 @@ public static class SettingsStore
 
 public static class ModsFolderMover
 {
-    public static void Move(string from, string to)
+    public static void Move(string from, string to, Action<string>? beforeMove = null)
     {
         var f = Norm(from); var t = Norm(to);
         if (t.StartsWith(f, StringComparison.OrdinalIgnoreCase) || f.StartsWith(t, StringComparison.OrdinalIgnoreCase))
@@ -32,14 +32,32 @@ public static class ModsFolderMover
             throw new InvalidOperationException("The new folder isn't empty.");
         Directory.CreateDirectory(to);
         if (!Directory.Exists(from)) return;
-        foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
+        // The mod list moves last, so until then the old folder still holds it and every file it names.
+        var files = Directory.GetFiles(from, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(from, f))
+            .OrderBy(f => Ci.Equals(f, "state.json") ? 2 : f.StartsWith("state.json", StringComparison.OrdinalIgnoreCase) || Ci.Equals(f, "hashcache.json") ? 1 : 0)
+            .ToList();
+        var moved = new List<string>();
+        try
         {
-            var dest = Path.Combine(to, Path.GetRelativePath(from, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            File.Move(file, dest);
+            foreach (var rel in files)
+            {
+                var dest = Path.Combine(to, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                beforeMove?.Invoke(rel);
+                File.Move(Path.Combine(from, rel), dest);
+                moved.Add(rel);
+            }
+        }
+        catch
+        {
+            foreach (var rel in moved) File.Move(Path.Combine(to, rel), Path.Combine(from, rel));
+            foreach (var d in Directory.GetDirectories(to)) Directory.Delete(d, recursive: true); // only the folders made above, now empty
+            throw;
         }
         Directory.Delete(from, true);
     }
+
+    static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
 
     static string Norm(string p) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(p)) + Path.DirectorySeparatorChar;
 }

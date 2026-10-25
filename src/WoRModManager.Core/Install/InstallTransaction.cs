@@ -24,11 +24,11 @@ public static class InstallTransaction
         {
             Directory.CreateDirectory(p.Backup);
             foreach (var n in j.BackedUp)
-                Move(Path.Combine(targetDir, n), Path.Combine(p.Backup, n), toBackup: true);
+                Move(Path.Combine(targetDir, n), Path.Combine(p.Backup, n), viaTmp: true);
             foreach (var (n, staged) in stagedByName)
             {
                 beforeMove?.Invoke(n);
-                Move(staged, Path.Combine(targetDir, n), toBackup: false);
+                Move(staged, Path.Combine(targetDir, n), viaTmp: false);
             }
         }
         catch
@@ -62,7 +62,7 @@ public static class InstallTransaction
             if (File.Exists(backup))
             {
                 File.Delete(target);
-                Move(backup, target, toBackup: false);
+                Move(backup, target, viaTmp: false);
             }
             else if (!j.BackedUp.Contains(n, StringComparer.OrdinalIgnoreCase))
                 File.Delete(target); // new or half-copied new file; there was no original
@@ -85,23 +85,23 @@ public static class InstallTransaction
     }
 
     // Same volume: File.Move is an atomic rename. Across volumes it is an unflushed copy+delete, and a half-copied
-    // backup would look complete to Rollback, so copy with write-through (into *.tmp for backups) before deleting src.
+    // file would look complete, so copy with write-through (into *.tmp when viaTmp) before deleting src.
     // shortcut: same path root is taken as same volume (as GamePaths.SameDrive does); upgrade if mounted-folder volumes matter.
-    private static void Move(string src, string dst, bool toBackup)
+    internal static void Move(string src, string dst, bool viaTmp)
     {
         if (string.Equals(Path.GetPathRoot(Path.GetFullPath(src)), Path.GetPathRoot(Path.GetFullPath(dst)), StringComparison.OrdinalIgnoreCase))
         {
             File.Move(src, dst);
             return;
         }
-        var copy = toBackup ? dst + ".tmp" : dst;
+        var copy = viaTmp ? dst + ".tmp" : dst;
         using (var i = File.OpenRead(src))
-        using (var o = new FileStream(copy, FileMode.CreateNew, FileAccess.Write))
+        using (var o = new FileStream(copy, viaTmp ? FileMode.Create : FileMode.CreateNew, FileAccess.Write))
         {
             i.CopyTo(o);
             o.Flush(flushToDisk: true);
         }
-        if (toBackup) File.Move(copy, dst);
+        if (viaTmp) File.Move(copy, dst);
         File.Delete(src);
     }
 }

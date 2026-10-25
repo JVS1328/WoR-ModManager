@@ -43,4 +43,21 @@ public class StateStoreTests : IDisposable
         ModRecord[] existing = [new() { Id = "imported/maw" }, new() { Id = "Imported/MAW-2" }];
         Assert.Equal("imported/maw-3", ModRecord.ImportedId("MAW", existing));
     }
+
+    [Fact] public void Load_CorruptState_FallsBackToBackup()
+    {
+        var store = new StateStore(game.Paths);
+        store.Save([new ModRecord { Id = "one", Name = "One" }]);
+        store.Save([new ModRecord { Id = "two", Name = "Two" }]);
+        File.WriteAllText(game.Paths.StateFile, "{ torn");
+        Assert.Equal("one", Assert.Single(store.Load()).Id);
+    }
+
+    [Fact] public void Load_StateAndBackupDamaged_ThrowsClearError()
+    {
+        File.WriteAllText(game.Paths.StateFile, "{ torn");
+        File.WriteAllText(game.Paths.StateFile + ".bak", "also torn");
+        var e = Assert.Throws<InvalidDataException>(() => new StateStore(game.Paths).Load());
+        Assert.Equal($"Mod list file is damaged: {game.Paths.StateFile}", e.Message);
+    }
 }

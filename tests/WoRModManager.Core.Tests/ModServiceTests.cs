@@ -62,7 +62,7 @@ public class ModServiceTests
         using var f = new Fixture();
         var mod = f.Release("v1", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb"));
 
-        await f.Svc.InstallOrUpdateAsync(mod, null, default);
+        await f.Svc.InstallOrUpdateAsync(mod, null, false, default);
 
         Assert.Equal("aaa", File.ReadAllText(f.Asset("z_maw_A.pak")));
         Assert.Equal("bbb", File.ReadAllText(f.Asset("z_maw_B.pak")));
@@ -75,10 +75,10 @@ public class ModServiceTests
     [Fact] public async Task Update_OnlyDownloadsChangedPaks()
     {
         using var f = new Fixture();
-        await f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb"), ("z_maw_Old.pak", "old")), null, default);
+        await f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb"), ("z_maw_Old.pak", "old")), null, false, default);
         f.Http.Requests.Clear();
 
-        await f.Svc.InstallOrUpdateAsync(f.Release("v2", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "BBB2")), null, default);
+        await f.Svc.InstallOrUpdateAsync(f.Release("v2", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "BBB2")), null, false, default);
 
         Assert.Equal(["z_maw_B.pak"], f.Requested);
         Assert.Equal("BBB2", File.ReadAllText(f.Asset("z_maw_B.pak")));
@@ -91,11 +91,11 @@ public class ModServiceTests
     [Fact] public async Task Update_DownloadFails_AssetsUntouched()
     {
         using var f = new Fixture();
-        await f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb")), null, default);
+        await f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb")), null, false, default);
         var v2 = f.Release("v2", ("z_maw_A.pak", "AAA2"), ("z_maw_B.pak", "BBB2"));
         f.Fail.Add("z_maw_B.pak");
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => f.Svc.InstallOrUpdateAsync(v2, null, default));
+        await Assert.ThrowsAsync<HttpRequestException>(() => f.Svc.InstallOrUpdateAsync(v2, null, false, default));
 
         Assert.Equal("aaa", File.ReadAllText(f.Asset("z_maw_A.pak")));
         Assert.Equal("bbb", File.ReadAllText(f.Asset("z_maw_B.pak")));
@@ -104,7 +104,7 @@ public class ModServiceTests
 
         f.Fail.Clear();
         f.Http.Requests.Clear();
-        await f.Svc.InstallOrUpdateAsync(v2, null, default);
+        await f.Svc.InstallOrUpdateAsync(v2, null, false, default);
         Assert.Equal(["z_maw_B.pak"], f.Requested); // the finished staged pak is reused
         Assert.Equal("AAA2", File.ReadAllText(f.Asset("z_maw_A.pak")));
     }
@@ -112,7 +112,7 @@ public class ModServiceTests
     [Fact] public async Task Install_GameRunning_Throws()
     {
         using var f = new Fixture { Running = true };
-        await Assert.ThrowsAsync<GameRunningException>(() => f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "a")), null, default));
+        await Assert.ThrowsAsync<GameRunningException>(() => f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "a")), null, false, default));
         Assert.Empty(f.Http.Requests);
         Assert.Empty(f.State);
     }
@@ -120,10 +120,10 @@ public class ModServiceTests
     [Fact] public async Task Update_WhileDisabled_UpdatesDisabledFolder()
     {
         using var f = new Fixture();
-        await f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb")), null, default);
+        await f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb")), null, false, default);
         f.Svc.SetEnabled(MawId, false);
 
-        await f.Svc.InstallOrUpdateAsync(f.Release("v2", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "BBB2")), null, default);
+        await f.Svc.InstallOrUpdateAsync(f.Release("v2", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "BBB2")), null, false, default);
 
         var dis = f.P.DisabledDir(MawId);
         Assert.Equal("BBB2", File.ReadAllText(Path.Combine(dis, "z_maw_B.pak")));
@@ -204,7 +204,7 @@ public class ModServiceTests
     [Fact] public async Task Refresh_OfficialStatuses_UpdateAvailableThenRepair()
     {
         using var f = new Fixture();
-        await f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa")), null, default);
+        await f.Svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa")), null, false, default);
         var v1 = f.Release("v1", ("z_maw_A.pak", "aaa"));
         Assert.Equal(ModStatus.UpToDate, Assert.Single(await f.Svc.RefreshLibraryAsync([v1], default)).Status);
 
@@ -262,7 +262,7 @@ public class ModServiceTests
         var r = f.Svc.Adopt(["z_maw_A.pak", "z_maw_Mine.pak"], f.Release("v1", ("z_maw_A.pak", "aaa")), null);
         Assert.Equal(["z_maw_A.pak"], r.Paks);
 
-        await f.Svc.InstallOrUpdateAsync(f.Release("v2", ("z_maw_A.pak", "AAA2")), null, default);
+        await f.Svc.InstallOrUpdateAsync(f.Release("v2", ("z_maw_A.pak", "AAA2")), null, false, default);
 
         Assert.Equal("mine", File.ReadAllText(f.Asset("z_maw_Mine.pak")));
         var lib = await f.Svc.RefreshLibraryAsync([], default);
@@ -337,5 +337,54 @@ public class ModServiceTests
 
         Assert.False(File.Exists(old));
         Assert.True(File.Exists(fresh));
+    }
+
+    [Fact] public async Task Refresh_UnsafeRecord_SkippedOthersListed()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("z_a.pak", B("a"));
+        new StateStore(f.P).Save([
+            new ModRecord { Id = @"..\..\evil", Name = "Evil", Enabled = true, Paks = ["z_evil.pak"] },
+            new ModRecord { Id = "ok", Name = "Ok", Source = ModSource.Imported, Enabled = true, Paks = ["z_a.pak"] }]);
+        var e = Assert.Single(await f.Svc.RefreshLibraryAsync([], default));
+        Assert.Equal("ok", e.Record!.Id);
+    }
+
+    [Fact] public void Uninstall_TamperedRecordWithVanillaPak_Throws()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("Objects.pak", B("vanilla"));
+        new StateStore(f.P).Save([new ModRecord { Id = "bad", Name = "Bad", Enabled = true, Paks = ["Objects.pak"] }]);
+        Assert.Throws<InvalidDataException>(() => f.Svc.Uninstall("bad"));
+        Assert.True(File.Exists(f.Asset("Objects.pak")));
+    }
+
+    [Fact] public async Task Install_UnownedSameNameFile_RefusedUnlessAllowed()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("z_maw_A.pak", B("mine"));
+        var mod = f.Release("v1", ("z_maw_A.pak", "aaa"), ("z_maw_B.pak", "bbb"));
+
+        var ex = await Assert.ThrowsAsync<UnmanagedFilesException>(() => f.Svc.InstallOrUpdateAsync(mod, null, false, default));
+        Assert.Equal(["z_maw_A.pak"], ex.Names);
+        Assert.Equal("mine", File.ReadAllText(f.Asset("z_maw_A.pak")));
+        Assert.Empty(f.Http.Requests);
+        Assert.Empty(f.State);
+
+        await f.Svc.InstallOrUpdateAsync(mod, null, true, default);
+        Assert.Equal("aaa", File.ReadAllText(f.Asset("z_maw_A.pak")));
+    }
+
+    [Fact] public async Task Install_GameStartedDuringDownload_ThrowsBeforeCommit_KeepsStaging()
+    {
+        using var f = new Fixture();
+        var checks = 0;
+        var svc = new ModService(f.P, new GitHubClient(f.Http, Path.Combine(f.G.Root, "cache")), new Downloader(f.Http), () => ++checks > 1);
+
+        await Assert.ThrowsAsync<GameRunningException>(() => svc.InstallOrUpdateAsync(f.Release("v1", ("z_maw_A.pak", "aaa")), null, false, default));
+
+        Assert.False(File.Exists(f.Asset("z_maw_A.pak")));
+        Assert.True(File.Exists(Path.Combine(f.P.Staging, "JVS1328_WoR-MAW-releases", "z_maw_A.pak")));
+        Assert.Empty(f.State);
     }
 }

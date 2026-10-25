@@ -254,7 +254,13 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             var progress = new Progress<DownloadProgress>(card.Report);
-            await Task.Run(() => service.InstallOrUpdateAsync(card.Official!, progress, ct), ct);
+            Task Install(bool overwrite) => Task.Run(() => service.InstallOrUpdateAsync(card.Official!, progress, overwrite, ct), ct);
+            try { await Install(false); }
+            catch (UnmanagedFilesException e)
+            {
+                if (!AskOverwrite(e.Names)) return;
+                await Install(true);
+            }
         }
         finally
         {
@@ -299,7 +305,7 @@ public sealed class MainViewModel : ObservableObject
         if (IsGameRunning()) throw new GameRunningException();
         var mods = new StateStore(Paths).Load();
         var cat = catalog;
-        var a = await Task.Run(() => ZipImporter.Analyze(path, mods, cat), ct);
+        var a = await Task.Run(() => ZipImporter.Analyze(path, mods, cat, Paths), ct);
         string? name = null;
         switch (a.Kind)
         {
@@ -323,12 +329,13 @@ public sealed class MainViewModel : ObservableObject
                 break;
         }
         var overwrite = a.Conflicts.Count > 0;
-        if (overwrite && !PromptWindow.Ask(
-                $"These files already belong to another mod and will be overwritten:\n\n{string.Join("\n", a.Conflicts)}", "Overwrite"))
-            return;
+        if (overwrite && !AskOverwrite(a.Conflicts)) return;
         if (IsGameRunning()) throw new GameRunningException(); // ZipImporter doesn't check, and the game may have started meanwhile
         await Task.Run(() => ZipImporter.Apply(a, path, Paths, mods, name, overwrite), ct);
     }
+
+    static bool AskOverwrite(IEnumerable<string> names) =>
+        PromptWindow.Ask($"These files already exist and will be overwritten:\n\n{string.Join("\n", names)}", "Overwrite");
 
     internal Task UninstallAsync(ModCardViewModel card)
     {
@@ -373,7 +380,12 @@ public sealed class MainViewModel : ObservableObject
         await RunAsync("Moving the Mods folder…", async ct =>
         {
             await Task.Run(() => ModsFolderMover.Move(from, folder), ct);
-            SettingsStore.Save(SettingsFile, new AppSettings(next.GameRoot, folder));
+            try { SettingsStore.Save(SettingsFile, new AppSettings(next.GameRoot, folder)); }
+            catch
+            {
+                await Task.Run(() => ModsFolderMover.Move(folder, from)); // settings still name the old folder
+                throw;
+            }
             Load(next);
         });
     }

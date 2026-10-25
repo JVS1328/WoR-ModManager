@@ -36,7 +36,7 @@ public class ZipImporterTests : IDisposable
     {
         var pak = Path.Combine(game.Root, "zBlackPowder.pak");
         File.WriteAllText(pak, "x");
-        var a = ZipImporter.Analyze(pak, [], []);
+        var a = ZipImporter.Analyze(pak, [], [], game.Paths);
         Assert.Equal(ImportKind.NewMod, a.Kind);
         Assert.Equal(["zBlackPowder.pak"], a.PakNames);
         Assert.Equal("zBlackPowder", a.SuggestedName);
@@ -48,7 +48,7 @@ public class ZipImporterTests : IDisposable
     {
         var maw = Imported("imported/maw", MawPaks(24));
         var zip = Zip("MAW_update.zip", [.. MawPaks(23).Select(n => ("MAW/" + n, "x")), ("MAW/z_maw_New.pak", "x")]);
-        var a = ZipImporter.Analyze(zip, [maw], []);
+        var a = ZipImporter.Analyze(zip, [maw], [], game.Paths);
         Assert.Equal(ImportKind.UpdateOf, a.Kind);
         Assert.Equal("imported/maw", a.TargetModId);
         Assert.Equal(24, a.PakNames.Count);
@@ -59,7 +59,7 @@ public class ZipImporterTests : IDisposable
     {
         var off = Maw(MawPaks(3));
         var zip = Zip("MAW.zip", [.. MawPaks(3).Select(n => (n, "x"))]);
-        var a = ZipImporter.Analyze(zip, [], [off]);
+        var a = ZipImporter.Analyze(zip, [], [off], game.Paths);
         Assert.Equal(ImportKind.AdoptOfficial, a.Kind);
         Assert.Equal(MawId, a.TargetModId);
         Assert.Same(off, a.Official);
@@ -68,19 +68,19 @@ public class ZipImporterTests : IDisposable
     [Fact] public void Analyze_TraversalEntry_Ignored()
     {
         var zip = Zip("evil.zip", ("../../z_evil.pak", "x"), ("C:/z_root.pak", "x"), ("/z_abs.pak", "x"), ("ok/z_good.pak", "x"));
-        Assert.Equal(["z_good.pak"], ZipImporter.Analyze(zip, [], []).PakNames);
+        Assert.Equal(["z_good.pak"], ZipImporter.Analyze(zip, [], [], game.Paths).PakNames);
     }
 
     [Fact] public void Analyze_ReShadePresetZip()
     {
         var zip = Zip("Cinematic.zip", ("Cinematic.ini", "[General]\r\nTechniques=Clarity@Clarity.fx\r\n"), ("Shaders/Clarity.fx", "x"));
-        Assert.Equal(ImportKind.ReShadePreset, ZipImporter.Analyze(zip, [], []).Kind);
+        Assert.Equal(ImportKind.ReShadePreset, ZipImporter.Analyze(zip, [], [], game.Paths).Kind);
     }
 
     [Fact] public void Analyze_ZipWithOnlyTxtAndExe_Nothing()
     {
         var zip = Zip("junk.zip", ("readme.txt", "x"), ("setup.exe", "x"), ("settings.ini", "[a]\r\nb=c"));
-        var a = ZipImporter.Analyze(zip, [], []);
+        var a = ZipImporter.Analyze(zip, [], [], game.Paths);
         Assert.Equal(ImportKind.Nothing, a.Kind);
         Assert.Empty(a.PakNames);
     }
@@ -89,7 +89,7 @@ public class ZipImporterTests : IDisposable
     {
         var zip = Zip("My_Cool-Mod.zip", ("files/x.txt", "t"), ("deep/dir/z_a.pak", "pak"), ("run.exe", "exe"));
         var mods = new List<ModRecord>();
-        var r = ZipImporter.Apply(ZipImporter.Analyze(zip, mods, []), zip, game.Paths, mods, null);
+        var r = ZipImporter.Apply(ZipImporter.Analyze(zip, mods, [], game.Paths), zip, game.Paths, mods, null);
 
         Assert.Equal(["z_a.pak"], Directory.GetFiles(game.Paths.Assets).Select(Path.GetFileName));
         Assert.Equal("pak", AssetText("z_a.pak"));
@@ -105,7 +105,7 @@ public class ZipImporterTests : IDisposable
     {
         var other = Imported("imported/x", "z_shared.pak");
         var zip = Zip("new.zip", ("z_shared.pak", "x"), ("z_new.pak", "x"), ("zz.pak", "x"));
-        var a = ZipImporter.Analyze(zip, [other], []);
+        var a = ZipImporter.Analyze(zip, [other], [], game.Paths);
         Assert.Equal(ImportKind.NewMod, a.Kind);
         Assert.Equal(["z_shared.pak"], a.Conflicts);
     }
@@ -116,7 +116,7 @@ public class ZipImporterTests : IDisposable
         var other = Imported("imported/x", "z_shared.pak");
         var mods = new List<ModRecord> { other };
         var zip = Zip("new.zip", ("z_shared.pak", "new"), ("z_new.pak", "x"));
-        var a = ZipImporter.Analyze(zip, mods, []);
+        var a = ZipImporter.Analyze(zip, mods, [], game.Paths);
 
         Assert.Throws<InvalidOperationException>(() => ZipImporter.Apply(a, zip, game.Paths, mods, null));
         Assert.Equal("old", AssetText("z_shared.pak"));
@@ -135,7 +135,7 @@ public class ZipImporterTests : IDisposable
         var maw = Imported("imported/maw", "z_maw_01.pak", "z_maw_02.pak", "z_maw_03.pak");
         var mods = new List<ModRecord> { maw };
         var zip = Zip("upd.zip", ("z_maw_02.pak", "new"), ("z_maw_03.pak", "new"), ("z_maw_04.pak", "four"));
-        var a = ZipImporter.Analyze(zip, mods, []);
+        var a = ZipImporter.Analyze(zip, mods, [], game.Paths);
         Assert.Equal(ImportKind.UpdateOf, a.Kind);
 
         var r = ZipImporter.Apply(a, zip, game.Paths, mods, null);
@@ -151,7 +151,7 @@ public class ZipImporterTests : IDisposable
     {
         var zip = Zip("MAW.zip", ("z_maw_01.pak", "x"));
         var mods = new List<ModRecord>();
-        var r = ZipImporter.Apply(ZipImporter.Analyze(zip, mods, [Maw("z_maw_01.pak")]), zip, game.Paths, mods, null);
+        var r = ZipImporter.Apply(ZipImporter.Analyze(zip, mods, [Maw("z_maw_01.pak")], game.Paths), zip, game.Paths, mods, null);
         Assert.Equal(MawId, r.Id);
         Assert.Equal(MawId, r.RepoId);
         Assert.Equal("MAW", r.Name);
@@ -165,7 +165,7 @@ public class ZipImporterTests : IDisposable
     {
         var zip = Zip("MAW.zip", ("z_maw_01.pak", "x"), ("z_maw_Extra.pak", "e"));
         var mods = new List<ModRecord>();
-        var a = ZipImporter.Analyze(zip, mods, [Maw("z_maw_01.pak", "z_maw_02.pak")]);
+        var a = ZipImporter.Analyze(zip, mods, [Maw("z_maw_01.pak", "z_maw_02.pak")], game.Paths);
         Assert.Equal(ImportKind.AdoptOfficial, a.Kind);
 
         var r = ZipImporter.Apply(a, zip, game.Paths, mods, null);
@@ -176,5 +176,20 @@ public class ZipImporterTests : IDisposable
         Assert.Equal(["z_maw_Extra.pak"], extra.Paks);
         Assert.Equal("e", AssetText("z_maw_Extra.pak"));
         Assert.Equal(2, new StateStore(game.Paths).Load().Count);
+    }
+
+    [Fact] public void Analyze_UnownedSameNameFileInAssets_IsConflict_ApplyRefusesUnlessAllowed()
+    {
+        game.WritePak("z_new.pak", "mine"u8.ToArray());
+        var mods = new List<ModRecord>();
+        var zip = Zip("new.zip", ("z_new.pak", "new"), ("z_other.pak", "x"));
+        var a = ZipImporter.Analyze(zip, mods, [], game.Paths);
+        Assert.Equal(["z_new.pak"], a.Conflicts);
+
+        Assert.Throws<InvalidOperationException>(() => ZipImporter.Apply(a, zip, game.Paths, mods, null));
+        Assert.Equal("mine", AssetText("z_new.pak"));
+
+        ZipImporter.Apply(a, zip, game.Paths, mods, null, allowConflicts: true);
+        Assert.Equal("new", AssetText("z_new.pak"));
     }
 }
