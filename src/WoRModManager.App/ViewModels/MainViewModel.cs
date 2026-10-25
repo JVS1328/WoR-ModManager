@@ -247,6 +247,9 @@ public sealed class MainViewModel : ObservableObject
 
     internal Task InstallAsync(ModCardViewModel card) => RunAsync($"Installing {card.Name}…", async ct =>
     {
+        if (card.Entry?.Plan?.ToRemove is { Count: > 0 } removed
+            && !PromptWindow.Ask($"This update deletes these files from the game:\n\n{string.Join("\n", removed)}", "Update"))
+            return;
         card.IsDownloading = true;
         try
         {

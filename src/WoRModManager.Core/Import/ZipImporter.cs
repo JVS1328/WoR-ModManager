@@ -60,7 +60,13 @@ public static class ZipImporter
             ImportKind.AdoptOfficial => existing ?? new ModRecord { Id = a.TargetModId!, Name = a.Official?.Name ?? a.TargetModId!, Enabled = true },
             _ => new ModRecord { Id = ModRecord.ImportedId(name, mods), Name = name, Source = ModSource.Imported, Enabled = true },
         };
-        var loc = rec.Location(p);
+        // An adopted official record owns only its release's names (an update removes the rest); the rest become their own imported mod.
+        var mine = a.Kind == ImportKind.AdoptOfficial && a.Official is { } off
+            ? a.PakNames.Where(n => ModService.ReleasePaks(off).Contains(n, Ci)).ToList()
+            : [.. a.PakNames];
+        var parts = new List<(ModRecord Rec, List<string> Names)> { (rec, mine) };
+        if (a.PakNames.Except(mine, Ci).ToList() is { Count: > 0 } rest)
+            parts.Add((new ModRecord { Id = ModRecord.ImportedId(name, mods), Name = name, Source = ModSource.Imported, Enabled = true }, rest));
 
         var stage = Path.Combine(p.Staging, "import");
         try
@@ -76,8 +82,12 @@ public static class ZipImporter
             }
             if (staged.Count != a.PakNames.Count) throw new InvalidDataException("The file changed after it was checked; add it again.");
 
-            Directory.CreateDirectory(loc);
-            InstallTransaction.Commit(p, loc, staged, []);
+            foreach (var (r, names) in parts)
+            {
+                var loc = r.Location(p);
+                Directory.CreateDirectory(loc);
+                InstallTransaction.Commit(p, loc, names.ToDictionary(n => n, n => staged[n], Ci), []);
+            }
         }
         finally
         {
@@ -90,10 +100,14 @@ public static class ZipImporter
             rec.RepoId = rec.Id;
             rec.Version = null; // unknown, so the next refresh compares digests and reports truthfully
         }
-        if (!mods.Contains(rec)) mods.Add(rec);
-        foreach (var m in mods.Where(m => m != rec && Ci.Equals(m.Location(p), loc)))
-            m.Paks.RemoveAll(n => a.PakNames.Contains(n, Ci)); // the overwritten files now belong to rec
-        rec.Paks = [.. rec.Paks.Union(a.PakNames, Ci)];
+        foreach (var (r, names) in parts)
+        {
+            if (!mods.Contains(r)) mods.Add(r);
+            var loc = r.Location(p);
+            foreach (var m in mods.Where(m => m != r && Ci.Equals(m.Location(p), loc)))
+                m.Paks.RemoveAll(n => names.Contains(n, Ci)); // the overwritten files now belong to r
+            r.Paks = [.. r.Paks.Union(names, Ci)];
+        }
         new StateStore(p).Save(mods);
         return rec;
     }

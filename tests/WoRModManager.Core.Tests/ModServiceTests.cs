@@ -248,6 +248,27 @@ public class ModServiceTests
         Assert.Null(ModService.MatchOfficial(["z_maw_UI.pak", "zBlackPowder.pak"], [maw]));
     }
 
+    [Fact] public void MatchOfficial_PrefixOnly_WithoutAnyReleaseName_NoMatch()
+    {
+        var maw = Maw("v1", [A("z_maw_UI.pak", B("1"))]);
+        Assert.Null(ModService.MatchOfficial(["z_maw_New.pak"], [maw]));
+    }
+
+    [Fact] public async Task Adopt_PrefixOnlyPak_NotRemovedByUpdate()
+    {
+        using var f = new Fixture();
+        f.G.WritePak("z_maw_A.pak", B("aaa"));
+        f.G.WritePak("z_maw_Mine.pak", B("mine"));
+        var r = f.Svc.Adopt(["z_maw_A.pak", "z_maw_Mine.pak"], f.Release("v1", ("z_maw_A.pak", "aaa")), null);
+        Assert.Equal(["z_maw_A.pak"], r.Paks);
+
+        await f.Svc.InstallOrUpdateAsync(f.Release("v2", ("z_maw_A.pak", "AAA2")), null, default);
+
+        Assert.Equal("mine", File.ReadAllText(f.Asset("z_maw_Mine.pak")));
+        var lib = await f.Svc.RefreshLibraryAsync([], default);
+        Assert.Equal(["z_maw_Mine.pak"], Assert.Single(lib, e => e.Status == ModStatus.Unmanaged).UnmanagedPaks);
+    }
+
     [Fact] public void Uninstall_RemovesOnlyOwnedPaks()
     {
         using var f = new Fixture();

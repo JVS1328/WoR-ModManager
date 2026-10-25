@@ -160,4 +160,21 @@ public class ZipImporterTests : IDisposable
         Assert.True(r.Enabled);
         Assert.Equal("x", AssetText("z_maw_01.pak"));
     }
+
+    [Fact] public void Apply_AdoptOfficial_NonReleasePak_BecomesSeparateImportedMod()
+    {
+        var zip = Zip("MAW.zip", ("z_maw_01.pak", "x"), ("z_maw_Extra.pak", "e"));
+        var mods = new List<ModRecord>();
+        var a = ZipImporter.Analyze(zip, mods, [Maw("z_maw_01.pak", "z_maw_02.pak")]);
+        Assert.Equal(ImportKind.AdoptOfficial, a.Kind);
+
+        var r = ZipImporter.Apply(a, zip, game.Paths, mods, null);
+
+        Assert.Equal(["z_maw_01.pak"], r.Paks);
+        var extra = Assert.Single(mods, m => m != r);
+        Assert.Equal(ModSource.Imported, extra.Source);
+        Assert.Equal(["z_maw_Extra.pak"], extra.Paks);
+        Assert.Equal("e", AssetText("z_maw_Extra.pak"));
+        Assert.Equal(2, new StateStore(game.Paths).Load().Count);
+    }
 }

@@ -174,12 +174,16 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         var mods = store.Load();
         if (pakNames.Select(n => StateStore.OwnerOf(mods, n)).FirstOrDefault(o => o is not null) is { } owner)
             throw new InvalidOperationException($"Already managed by {owner.Name}.");
+        // An official record owns only its release's names: an update removes owned names the release dropped.
+        var owned = asOfficial is null ? pakNames : pakNames.Where(n => ReleasePaks(asOfficial).Contains(n, Ci)).ToList();
+        if (owned.Count == 0) throw new InvalidOperationException($"None of these files are in the latest {asOfficial!.Name} release.");
+        var name = importedName ?? Path.GetFileNameWithoutExtension(pakNames[0]);
         var r = asOfficial is not null
             ? new ModRecord { Id = asOfficial.Repo.Id, Name = asOfficial.Name, Source = ModSource.Official, RepoId = asOfficial.Repo.Id }
-            : new ModRecord { Id = "imported-" + Guid.NewGuid().ToString("N"), Name = importedName ?? Path.GetFileNameWithoutExtension(pakNames[0]), Source = ModSource.Imported };
+            : new ModRecord { Id = ModRecord.ImportedId(name, mods), Name = name, Source = ModSource.Imported };
         if (mods.Any(m => Ci.Equals(m.Id, r.Id))) throw new InvalidOperationException($"{r.Name} is already installed.");
         r.Enabled = true; // unmanaged paks live in Assets
-        r.Paks = [.. pakNames];
+        r.Paks = [.. owned];
         Location(r);
         mods.Add(r);
         store.Save(mods);
@@ -192,14 +196,16 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         var prefixes = pakNames.Select(PakNames.Prefix).Distinct(Ci).ToList();
         foreach (var o in official)
         {
-            var rel = o.Release?.Assets.Select(a => a.Name).Where(PakNames.IsModPak).ToList() ?? [];
-            if (rel.Count == 0) continue;
+            var rel = ReleasePaks(o);
+            if (!pakNames.Any(n => rel.Contains(n, Ci))) continue; // adopting must leave the official record owning something
             if (pakNames.All(n => rel.Contains(n, Ci))) return o;
             var relPrefixes = rel.Select(PakNames.Prefix).Distinct(Ci).ToList();
             if (prefixes is [{ } p] && relPrefixes is [{ } rp] && Ci.Equals(p, rp)) return o;
         }
         return null;
     }
+
+    internal static List<string> ReleasePaks(OfficialMod o) => o.Release?.Assets.Select(a => a.Name).Where(PakNames.IsModPak).ToList() ?? [];
 
     public void RecoverIfNeeded()
     {
