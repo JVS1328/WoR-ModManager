@@ -139,6 +139,7 @@ public sealed class MainViewModel : ObservableObject
 
     void OpsChanged(string key)
     {
+        SyncCards();
         ApplyOp(key);
         UpdateStatus();
         OnPropertyChanged(nameof(IsWorking));
@@ -343,12 +344,10 @@ public sealed class MainViewModel : ObservableObject
             overlapsWith[o.ModA].Add(NameOf(o.ModB));
             overlapsWith[o.ModB].Add(NameOf(o.ModA));
         }
-        string? OverlapText(LibraryEntry? e) =>
+        overlapText = e =>
             e?.Record is { } r && overlapsWith.TryGetValue(r.Id, out var names) ? $"Overlaps with {string.Join(", ", names)}" : null;
 
-        Sync(Official, false, catalog.Select(m => (m.Repo.Id, (OfficialMod?)m,
-            library.FirstOrDefault(e => e.Record is { Source: ModSource.Official } r && Ci.Equals(r.RepoId, m.Repo.Id)))), OverlapText);
-        Sync(Library, true, library.Select(e => (e.Record?.Id ?? "unmanaged:" + e.UnmanagedPaks[0], e.Official, (LibraryEntry?)e)), OverlapText);
+        SyncCards();
         ReShade.Reload(reshade);
         CommandManager.InvalidateRequerySuggested();
         if (adopted.Count > 0) ShowAdopted(adopted);
@@ -360,6 +359,18 @@ public sealed class MainViewModel : ObservableObject
             ? $"{r.Name}: " + (e.Status == ModStatus.UpToDate ? "up to date" : $"{e.Plan?.ToDownload.Count ?? 0} file(s) out of date, update it from Red's Corner")
             : r.Name);
         PromptWindow.Show("Found mods you installed before the manager. They're managed here now and kept up to date:\n\n" + string.Join("\n", lines));
+    }
+
+    Func<LibraryEntry?, string?> overlapText = _ => null;
+
+    // Rebuilds both tabs' cards from what's already loaded (no disk or network), so it can run whenever an operation starts or ends.
+    void SyncCards()
+    {
+        LibraryEntry? EntryFor(OfficialMod m) => library.FirstOrDefault(e => e.Record is { Source: ModSource.Official } r && Ci.Equals(r.RepoId, m.Repo.Id));
+        Sync(Official, false, catalog.Select(m => (m.Repo.Id, (OfficialMod?)m, EntryFor(m))), overlapText);
+        // a Red's Corner mod being installed for the first time is in My Library at once, with its progress
+        var installing = catalog.Where(m => ops.ContainsKey(m.Repo.Id) && EntryFor(m) is null).Select(m => (m.Repo.Id, (OfficialMod?)m, (LibraryEntry?)null));
+        Sync(Library, true, library.Select(e => (e.Record?.Id ?? "unmanaged:" + e.UnmanagedPaks[0], e.Official, (LibraryEntry?)e)).Concat(installing), overlapText);
     }
 
     static IEnumerable<ModRecord> Records(IEnumerable<LibraryEntry> lib) => lib.Select(e => e.Record).OfType<ModRecord>();

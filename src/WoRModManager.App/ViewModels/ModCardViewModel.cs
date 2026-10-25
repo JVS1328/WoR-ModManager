@@ -85,6 +85,7 @@ public sealed class ModCardViewModel : ObservableObject
         if (last is { } p && IsDownloading) Report(p);
         OnPropertyChanged(nameof(IsOperating));
         OnPropertyChanged(nameof(CanAct));
+        OnPropertyChanged(nameof(ShowPrimary));
         OnPropertyChanged(nameof(StatusText));
     }
 
@@ -112,7 +113,7 @@ public sealed class ModCardViewModel : ObservableObject
 
     int UpdatePaks => Entry?.Plan?.ToDownload.Count ?? 0;
     bool CanPrimary => Official?.Release is not null && Entry?.Status is null or ModStatus.UpdateAvailable or ModStatus.Repair;
-    public bool ShowPrimary => inLibrary ? CanPrimary && Entry is not null : Entry?.Status is not ModStatus.FilesMissing;
+    public bool ShowPrimary => !IsOperating && (inLibrary ? CanPrimary && Entry is not null : Entry?.Status is not ModStatus.FilesMissing);
     public bool IsUpdate => Entry?.Status == ModStatus.UpdateAvailable;
 
     public bool ShowToggle => Record is not null && !IsWaiting;
