@@ -26,7 +26,7 @@ This source repo is private. The app only reads public repos: `WoR-ModManager-re
 
 ## Releasing a mod
 
-Each mod has its own releases repo with a `release.ps1` and a README describing the checklist (tag `vX.Y.Z`, all paks + `changelog.txt` + `gamebuild.txt`, and a root `thumbnail.png|jpg` + `description.txt` whose first line is the Nexus link):
+Each mod has its own releases repo with a `release.ps1` and a README describing the checklist (tag `vX.Y.Z` holding the paks that changed + `changelog.txt` + `gamebuild.txt`; a root `manifest.txt` listing every pak, its SHA-256 and the release that holds it; and a root `thumbnail.png|jpg` + `description.txt` whose first line is the Nexus link):
 
 - https://github.com/JVS1328/WoR-MAW-releases
 - https://github.com/JVS1328/WoR-1812-releases

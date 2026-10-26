@@ -45,6 +45,33 @@ public class GitHubClient
         return new ReleaseInfo(Str(root, "tag_name"), Str(root, "body"), assets, r.FromCache);
     }
 
+    // manifest.txt in the repo lists every file of the current version and the release that holds it, so a release
+    // uploads only what changed. Null when the repo has none: the latest release then holds every file.
+    public async Task<ReleaseInfo?> GetManifestReleaseAsync(RepoRef repo, CancellationToken ct)
+    {
+        var (text, fromCache) = await GetRawTextWithCacheFlagAsync(repo, "manifest.txt", ct);
+        return text is null ? null : ParseManifest(repo, text, fromCache);
+    }
+
+    // "version <tag>" then one "<name> <size> <sha256> <tag>" line per file.
+    internal static ReleaseInfo ParseManifest(RepoRef repo, string text, bool fromCache)
+    {
+        string? version = null;
+        var assets = new List<ReleaseAsset>();
+        foreach (var line in text.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (f is ["version", var v]) { version = v; continue; }
+            if (f is not [var name, var size, var sha, var tag] || !long.TryParse(size, out var n) || n < 0
+                || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.Contains("..")
+                || sha.Length != 64 || !sha.All(char.IsAsciiHexDigit))
+                throw new InvalidDataException($"Bad manifest.txt line in {repo.Id}: {line}");
+            assets.Add(new ReleaseAsset(name, n, sha.ToLowerInvariant(), new Uri(
+                $"https://github.com/{repo.Owner}/{repo.Repo}/releases/download/{Uri.EscapeDataString(tag)}/{Uri.EscapeDataString(name)}")));
+        }
+        return new ReleaseInfo(version ?? throw new InvalidDataException($"manifest.txt in {repo.Id} has no version line"), "", assets, fromCache);
+    }
+
     // Published releases, newest first (GitHub's order). The notes are the release's changelog.txt.
     public async Task<IReadOnlyList<ReleaseHistoryEntry>> GetReleaseHistoryAsync(RepoRef repo, CancellationToken ct)
     {

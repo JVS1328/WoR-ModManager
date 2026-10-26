@@ -63,7 +63,7 @@ public class ModService(GamePaths paths, GitHubClient gh, Downloader dl, Func<bo
         {
             var thumb = await gh.GetRawBytesAsync(repo, "thumbnail.png", ct) ?? await gh.GetRawBytesAsync(repo, "thumbnail.jpg", ct);
             var desc = ModDescription.Parse(await gh.GetRawTextAsync(repo, "description.txt", ct));
-            var rel = await gh.GetLatestReleaseAsync(repo, ct);
+            var rel = await gh.GetManifestReleaseAsync(repo, ct) ?? await gh.GetLatestReleaseAsync(repo, ct);
             async Task<string?> AssetText(string name) =>
                 rel?.Assets.FirstOrDefault(a => Ci.Equals(a.Name, name)) is { } a ? await gh.GetAssetTextAsync(a, ct) : null;
             return new OfficialMod(repo, DisplayName(repo.Repo), desc, thumb, rel, await AssetText("changelog.txt"),

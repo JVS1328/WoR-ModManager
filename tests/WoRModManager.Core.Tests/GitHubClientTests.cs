@@ -53,6 +53,31 @@ public class GitHubClientTests
         Assert.Equal("2022-11-28", h.GetValues("X-GitHub-Api-Version").Single());
     }
 
+    const string Sha = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789";
+
+    [Fact] public async Task GetManifestRelease_PointsEachFileAtTheReleaseThatHoldsIt()
+    {
+        var stub = new StubHttpHandler(_ => Json(200, $"version v1.3.9\nz_maw_UI.pak 10 {Sha} v1.3.7\r\n\nchangelog.txt 5 {Sha} v1.3.9\n"));
+        var r = await new GitHubClient(stub, TempDir()).GetManifestReleaseAsync(Repo, default);
+        Assert.Equal("https://raw.githubusercontent.com/JVS1328/WoR-MAW-releases/HEAD/manifest.txt", stub.Requests[0].RequestUri!.ToString());
+        Assert.Equal("v1.3.9", r!.Tag);
+        Assert.Equal(("z_maw_UI.pak", 10L, Sha.ToLowerInvariant()), (r.Assets[0].Name, r.Assets[0].Size, r.Assets[0].Sha256));
+        Assert.Equal("https://github.com/JVS1328/WoR-MAW-releases/releases/download/v1.3.7/z_maw_UI.pak", r.Assets[0].DownloadUrl.ToString());
+        Assert.Equal("https://github.com/JVS1328/WoR-MAW-releases/releases/download/v1.3.9/changelog.txt", r.Assets[1].DownloadUrl.ToString());
+    }
+
+    [Fact] public async Task GetManifestRelease_NullWithoutManifest() =>
+        Assert.Null(await new GitHubClient(new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound)), TempDir()).GetManifestReleaseAsync(Repo, default));
+
+    [Theory]
+    [InlineData($"z.pak 10 {Sha} v1")] // no version line
+    [InlineData($"version v1\n../z.pak 10 {Sha} v1")]
+    [InlineData($"version v1\nz.pak -1 {Sha} v1")]
+    [InlineData("version v1\nz.pak 10 abc v1")]
+    [InlineData($"version v1\nz.pak 10 {Sha}")]
+    public async Task GetManifestRelease_RejectsBadManifest(string text) =>
+        await Assert.ThrowsAsync<InvalidDataException>(() => new GitHubClient(new StubHttpHandler(_ => Json(200, text)), TempDir()).GetManifestReleaseAsync(Repo, default));
+
     [Fact] public async Task GetLatestRelease_SendsEtagAndUses304Cache()
     {
         var stub = new StubHttpHandler(_ => Json(200, Rel, "\"e1\""),
