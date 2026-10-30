@@ -25,8 +25,8 @@ public sealed class ReShadeViewModel : ObservableObject
     public ReShadeViewModel(MainViewModel owner)
     {
         this.owner = owner;
-        ImportCommand = new RelayCommand(_ => Import(), _ => owner.IsIdle && IsInstalled);
-        DeleteCommand = new RelayCommand(p => _ = DeleteAsync((PresetItem)p!), _ => owner.IsIdle);
+        ImportCommand = new RelayCommand(_ => Import(), _ => owner.CanTouchGame && IsInstalled);
+        DeleteCommand = new RelayCommand(p => _ = DeleteAsync((PresetItem)p!), _ => owner.CanTouchGame);
         OpenSiteCommand = new RelayCommand(_ => MainViewModel.ShellOpen("https://reshade.me"));
     }
 

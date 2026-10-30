@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using WoRModManager.App.Views;
 using WoRModManager.Core;
@@ -55,9 +56,14 @@ public sealed class MainViewModel : ObservableObject
         updater = new SelfUpdater(gh, dl, Environment.ProcessPath!, AppVersion);
         RefreshCommand = new RelayCommand(_ => _ = RefreshAsync(), _ => IsIdle);
         UpdateManagerCommand = new RelayCommand(_ => _ = UpdateManagerAsync(), _ => IsIdle && ManagerUpdate is not null);
+        PlayCommand = new RelayCommand(_ => Play(), _ => !GameRunning && !IsBusy && !HasModWork);
         ReShade = new ReShadeViewModel(this);
         Paths = paths;
+        gameRunning = IsGameRunning();
         Load(paths);
+        var poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        poll.Tick += (_, _) => PollGame();
+        poll.Start();
     }
 
     public GamePaths Paths { get; private set; }
@@ -66,6 +72,7 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<ModCardViewModel> Library { get; } = [];
     public ICommand RefreshCommand { get; }
     public ICommand UpdateManagerCommand { get; }
+    public ICommand PlayCommand { get; }
 
     string statusText = "";
     public string StatusText { get => statusText; private set => Set(ref statusText, value); }
@@ -84,7 +91,8 @@ public sealed class MainViewModel : ObservableObject
     bool reloading, reloadAgain;
 
     void UpdateStatus() =>
-        StatusText = string.Join("   ·   ", new[] { exclusiveStatus }.Concat(ops.Values.Select(o => o.Line)).Where(s => s.Length > 0));
+        StatusText = string.Join("   ·   ", new[] { exclusiveStatus, GameRunning ? "War of Rights is running: mod changes are locked until it closes." : "" }
+            .Concat(ops.Values.Select(o => o.Line)).Where(s => s.Length > 0));
 
     void SetStatus(string text)
     {
@@ -199,25 +207,64 @@ public sealed class MainViewModel : ObservableObject
             if (!Set(ref isBusy, value)) return;
             OnPropertyChanged(nameof(IsIdle));
             OnPropertyChanged(nameof(IsWorking));
+            OnPropertyChanged(nameof(CanTouchGame));
             CommandManager.InvalidateRequerySuggested();
         }
     }
     public bool IsIdle => !IsBusy;
 
     bool isLocked;
-    // Changing the game or Mods folder, or updating the manager itself: nothing else may touch the mods meanwhile.
+    // Changing the game or Mods folder, updating the manager itself, or the game running: nothing else may touch the game's files meanwhile.
     public bool IsLocked
     {
-        get => isLocked;
-        private set
-        {
-            if (!Set(ref isLocked, value)) return;
-            OnPropertyChanged(nameof(CanAddMods));
-            foreach (var c in Official.Concat(Library)) c.RefreshCanAct();
-            CommandManager.InvalidateRequerySuggested();
-        }
+        get => isLocked || GameRunning;
+        private set { if (Set(ref isLocked, value)) LockChanged(); }
     }
     public bool CanAddMods => !IsLocked;
+    // App-wide changes to the game (ReShade, uniform profiles) also wait for other app-wide work.
+    public bool CanTouchGame => IsIdle && !IsLocked;
+
+    void LockChanged()
+    {
+        OnPropertyChanged(nameof(IsLocked));
+        OnPropertyChanged(nameof(CanAddMods));
+        OnPropertyChanged(nameof(CanTouchGame));
+        foreach (var c in Official.Concat(Library)) c.RefreshCanAct();
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    bool gameRunning;
+    // Polled, so a game started from Steam locks the manager too.
+    public bool GameRunning
+    {
+        get => gameRunning;
+        private set
+        {
+            if (!Set(ref gameRunning, value)) return;
+            OnPropertyChanged(nameof(PlayText));
+            LockChanged();
+            UpdateStatus();
+            if (!value) GameExited?.Invoke();
+        }
+    }
+    public event Action? GameExited;
+    public string PlayText => GameRunning ? "Running" : "Play";
+
+    DateTime launchGraceUntil;
+
+    void Play()
+    {
+        ShellOpen($"steam://rungameid/{SteamLocator.AppId}");
+        launchGraceUntil = DateTime.UtcNow.AddMinutes(1); // Steam takes a while to start the game; stay locked until it shows up
+        GameRunning = true;
+    }
+
+    void PollGame()
+    {
+        var running = IsGameRunning();
+        if (running) launchGraceUntil = default;
+        GameRunning = running || DateTime.UtcNow < launchGraceUntil;
+    }
 
     public static bool IsGameRunning() => Process.GetProcessesByName("WarOfRights").Length > 0;
 
@@ -489,7 +536,8 @@ public sealed class MainViewModel : ObservableObject
         {
             var key = "add:" + Path.GetFullPath(f);
             if (!await RunModAsync(key, $"Adding {Path.GetFileName(f)}…", ct => AddFileAsync(f, key, ct)))
-                PromptWindow.Show(IsLocked ? "Wait for the settings change to finish, then add the file again." : $"{Path.GetFileName(f)} is already being added.");
+                PromptWindow.Show(GameRunning ? "Close War of Rights first."
+                    : IsLocked ? "Wait for the settings change to finish, then add the file again." : $"{Path.GetFileName(f)} is already being added.");
         }
     }
 

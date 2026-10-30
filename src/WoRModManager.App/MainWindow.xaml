@@ -40,6 +40,8 @@
                 <TextBlock DockPanel.Dock="Left" Text="WoR MOD MANAGER" Foreground="{StaticResource GoldBrush}" FontSize="14" FontWeight="Bold"
                            VerticalAlignment="Center" Margin="0,0,32,0" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource GreenButton}" Content="{Binding PlayText}" Command="{Binding PlayCommand}" Margin="0,0,12,0"
+                            AutomationProperties.Name="Play War of Rights" ToolTip="Launch War of Rights through Steam" />
                     <Border Style="{StaticResource Pill}" Margin="0,0,12,0" ToolTip="Installed War of Rights build (from Steam)">
                         <TextBlock Text="{Binding GameBuild}" Foreground="{StaticResource PillTextBrush}" FontSize="11" />
                     </Border>
