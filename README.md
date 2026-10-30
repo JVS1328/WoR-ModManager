@@ -4,7 +4,7 @@ A single-exe, Steam-Workshop-style mod manager for War of Rights. Players instal
 
 **Play** launches the game through Steam; while `WarOfRights.exe` runs (however it was started) everything that changes game files is locked.
 
-**Uniform profiles** are named copies of the game's `UserConfig\Cloud\customizations.json`, e.g. one for the base game and one per reskin. The game's own saves go into the selected profile (captured on start, on game exit and before a switch); switching writes the other profile into the game. **Customize…** edits a profile's uniforms slot by slot, reading the item names and the jacket → shirt/hat/belt… rules from `Generated/uniforms.bin` and `apparel.bin` in the GameData pak the game loads last (a mod's `z_` pak beats the game's own). Ids it doesn't know are kept as they are.
+**Uniform profiles** are named copies of the game's `UserConfig\Cloud\customizations.json`, e.g. one for the base game and one per reskin. The game's own saves go into the selected profile (captured on start, on game exit and before a switch); switching writes the other profile into the game. **Customize…** edits a profile's uniforms slot by slot, reading the item names and the jacket → shirt/hat/belt… rules from `Generated/uniforms.bin` and `apparel.bin` in the GameData pak the game loads last (a mod's `z_` pak beats the game's own). Uniforms are listed under that pak's regiments from `Generated/outfitter.bin`, so a mod's renamed regiments show (MaW's "8vo de Linea", not "8th Alabama") and uniforms its regiments don't use are left out. Ids it doesn't know are kept as they are.
 
 ## Build and publish the exe
 

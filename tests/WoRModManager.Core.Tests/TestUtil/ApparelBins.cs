@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using WoRModManager.Core.Uniforms;
 
 namespace WoRModManager.Core.Tests.TestUtil;
 
@@ -29,18 +30,32 @@ public static class ApparelBins
         }
     });
 
-    public static byte[] Pak(byte[] uniforms, byte[] apparel)
+    // Regiment records as outfitter.bin has them: crc32(id), id, Identifier, Name, then company and class data in which
+    // each class's uniform id appears. The filler stands in for the parts that aren't read.
+    public static byte[] Outfitter(params (string Id, string Identifier, string Name, uint[] Uniforms)[] regiments) => Build(w =>
+    {
+        w.Write((uint)regiments.Length);
+        foreach (var r in regiments)
+        {
+            w.Write(Crc32.Lowercase(r.Id)); CString(w, r.Id); CString(w, r.Identifier); CString(w, r.Name);
+            w.Write(new byte[] { 1, 2, 2, 0, 8, 0 }); CString(w, "A"); CString(w, "Company A"); CString(w, "colors_x_nat");
+            foreach (var u in r.Uniforms) { CString(w, "Objects\\Characters\\CDF\\x.cdf"); w.Write((byte)1); w.Write(u); }
+        }
+    });
+
+    public static byte[] Pak(byte[] uniforms, byte[] apparel, byte[]? outfitter = null)
     {
         var ms = new MemoryStream();
         using (var z = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
         {
             using (var s = z.CreateEntry("Generated/uniforms.bin").Open()) s.Write(uniforms);
             using (var s = z.CreateEntry("Generated/apparel.bin").Open()) s.Write(apparel);
+            if (outfitter is not null) using (var s = z.CreateEntry("Generated/outfitter.bin").Open()) s.Write(outfitter);
         }
         return ms.ToArray();
     }
 
-    static void CString(BinaryWriter w, string s) { w.Write(Encoding.ASCII.GetBytes(s)); w.Write((byte)0); }
+    static void CString(BinaryWriter w, string s) { w.Write(Encoding.UTF8.GetBytes(s)); w.Write((byte)0); }
 
     static byte[] Build(Action<BinaryWriter> write)
     {

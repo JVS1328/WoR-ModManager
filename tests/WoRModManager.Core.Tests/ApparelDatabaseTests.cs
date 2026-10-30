@@ -68,6 +68,46 @@ public class ApparelDatabaseTests
         Assert.Equal("GameData.pak", ApparelDatabase.Load(g.Paths.Assets)!.SourcePak);
     }
 
+    [Fact] public void Crc32_MatchesTheGame() =>
+        Assert.Equal(392959916u, Crc32.Lowercase("USA_Infantry_4th_Pennsylvania_Officer_2ndLt")); // the real 4th Pennsylvania 2nd Lt uniform key
+
+    [Fact] public void Load_NamesUniformsAfterTheModsRegiments()
+    {
+        // MaW keeps the game's uniform names but renames regiments in outfitter.bin; the game shows the regiment's name
+        using var g = new TempGame();
+        g.WritePak("z_maw_GameData.pak", ApparelBins.Pak(
+            ApparelBins.Uniforms((10, "8th Alabama - Colonel", UniformHier, [1]), (11, "8th Alabama - Private", UniformHier, [1]),
+                                 (12, "9th New York - Private", UniformHier, [1]), (ApparelDatabase.HumanHeadKey, "Human Head", ApparelDatabase.HumanHeadKey, [1])),
+            ApparelBins.Apparel((1, "Coat", 0, [])),
+            ApparelBins.Outfitter(("csa_infantry_8th_alabama", "8vo", "de Linea", [10, 11]), ("csa_cavalry_lancers", "1er", "Lanceros", [11]))));
+        var db = ApparelDatabase.Load(g.Paths.Assets)!;
+        var names = db.Uniforms.Select(u => (u.Key, u.DisplayName)).ToList();
+        Assert.Contains((10u, "8vo de Linea - Colonel"), names);
+        Assert.Contains((11u, "8vo de Linea - Private"), names);
+        Assert.Contains((11u, "1er Lanceros - Private"), names); // a uniform two regiments share is listed under both
+        Assert.DoesNotContain(names, n => n.Key == 12); // no regiment of this mod uses it
+        Assert.Contains(db.Uniforms, u => u.IsHead);
+    }
+
+    [Fact] public void Load_RegimentWithEmptyIdentifierAndAccents()
+    {
+        // missing this record would file its uniforms under the regiment before it
+        using var g = new TempGame();
+        g.WritePak("GameData.pak", ApparelBins.Pak(
+            ApparelBins.Uniforms((10, "8th Alabama - Colonel", UniformHier, [1]), (11, "Sapper", UniformHier, [1]), (12, "Palmetto Sharpshooters- Private", UniformHier, [1])),
+            ApparelBins.Apparel((1, "Coat", 0, [])),
+            ApparelBins.Outfitter(("csa_infantry_8th_alabama", "8vo", "de Linea", [10, 12]), ("mex_zapadores", "", "Batallón de Zapadores", [11]))));
+        var names = ApparelDatabase.Load(g.Paths.Assets)!.Uniforms.Select(u => u.DisplayName).ToList();
+        Assert.Equal(["8vo de Linea - Colonel", "8vo de Linea - Private", "Batallón de Zapadores - Sapper"], names); // the game's own "Name- Rank" typo too
+    }
+
+    [Fact] public void Load_NoOutfitter_KeepsUniformNames()
+    {
+        using var g = new TempGame();
+        g.WritePak("GameData.pak", ApparelBins.Pak(ApparelBins.Uniforms((10, "8th Alabama - Colonel", UniformHier, [1])), ApparelBins.Apparel((1, "Coat", 0, []))));
+        Assert.Equal("8th Alabama - Colonel", Assert.Single(ApparelDatabase.Load(g.Paths.Assets)!.Uniforms).DisplayName);
+    }
+
     static byte[] EmptyZip()
     {
         var ms = new MemoryStream();
