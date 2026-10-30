@@ -15,6 +15,7 @@ public record GamePaths(string GameRoot, string ModsFolder)
     public string StateFile => Path.Combine(ModsFolder, "state.json");
     public string HashCacheFile => Path.Combine(ModsFolder, "hashcache.json");
     public string ReShadeDir => Path.Combine(ExeDir, "wormm-reshade");
+    public string CustomizationsFile => Path.Combine(GameRoot, "UserConfig", "Cloud", "customizations.json");
 
     public string DisabledDir(string modId) => Path.Combine(ModsFolder, "Disabled", modId.Replace('/', '_'));
 

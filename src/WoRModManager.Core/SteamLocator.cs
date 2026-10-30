@@ -5,7 +5,7 @@ namespace WoRModManager.Core;
 
 public static partial class SteamLocator
 {
-    const string AppId = "424030";
+    public const string AppId = "424030";
 
     public static IReadOnlyList<string> ParseLibraryFolders(string vdfText) =>
         PathRx().Matches(vdfText).Select(m => m.Groups[1].Value.Replace(@"\\", @"\")).ToList();
