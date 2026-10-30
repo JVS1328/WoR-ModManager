@@ -25,23 +25,28 @@ public sealed class UniformEditor
     readonly ApparelDatabase db;
     readonly IReadOnlyList<uint>? saved;
     readonly Dictionary<int, uint> selected = [];
-    bool edited;
+    // Slots a saved uniform fills with ids this database doesn't know (a mod that's off): any of those ids may be the
+    // slot's item, so nothing is picked for them unless the user does it, or the uniform would end up with two.
+    readonly HashSet<int> leaveEmpty = [];
 
     public UniformEditor(UniformDef uniform, ApparelDatabase db, IReadOnlyList<uint>? saved)
     {
         (this.uniform, this.db, this.saved) = (uniform, db, saved);
         var allowed = Allowed().ToList();
         Slots = (uniform.IsHead ? HeadSlots : UniformSlots).Where(s => allowed.Any(i => i.Category == s.Category)).ToList();
+        var holdsUnknown = saved?.Any(id => Item(id) is null) == true;
         foreach (var slot in Slots)
         {
             var mine = saved?.Select(Item).FirstOrDefault(i => i?.Category == slot.Category);
             if (mine is not null) selected[slot.Category] = mine.Id;
+            else if (holdsUnknown) leaveEmpty.Add(slot.Category);
             else if (!slot.ReadOnly) Pick(slot);
         }
     }
 
     public IReadOnlyList<Slot> Slots { get; }
-    public bool IsCustomized => saved is not null || edited;
+    public bool IsCustomized => saved is not null || Edited;
+    public bool Edited { get; private set; } // only edited uniforms are written back
 
     public uint Selected(int category) => selected.GetValueOrDefault(category);
 
@@ -60,7 +65,8 @@ public sealed class UniformEditor
         var slot = Slots.FirstOrDefault(s => s.Category == category);
         if (slot is null || slot.ReadOnly || Options(category).All(i => i.Id != id)) return;
         selected[category] = id;
-        edited = true;
+        Edited = true;
+        leaveEmpty.Remove(category);
         RepairChildren(category);
     }
 
@@ -94,6 +100,7 @@ public sealed class UniformEditor
     // Children default to a "None" item when there is one; with no valid item the slot is left empty.
     void Pick(Slot slot)
     {
+        if (leaveEmpty.Contains(slot.Category)) return;
         var options = Options(slot.Category);
         var pick = (slot.ParentCategory is null ? null : options.FirstOrDefault(i => i.Name.Contains("None", StringComparison.OrdinalIgnoreCase)))
                    ?? options.FirstOrDefault();

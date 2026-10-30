@@ -39,6 +39,8 @@ public sealed class SlotRow(CustomizerViewModel owner, UniformEditor editor, Slo
 // Edits one profile's uniforms. Nothing is written until Save.
 public sealed class CustomizerViewModel : ObservableObject
 {
+    readonly MainViewModel owner;
+    readonly string opened;
     readonly string profile;
     readonly UniformProfiles store;
     readonly ApparelDatabase db;
@@ -48,8 +50,9 @@ public sealed class CustomizerViewModel : ObservableObject
 
     public CustomizerViewModel(MainViewModel owner, string profile, UniformProfiles store, ApparelDatabase db)
     {
-        (this.profile, this.store, this.db) = (profile, store, db);
-        doc = CustomizationsDoc.Parse(store.Read(profile));
+        (this.owner, this.profile, this.store, this.db) = (owner, profile, store, db);
+        opened = store.Read(profile);
+        doc = CustomizationsDoc.Parse(opened);
         all = db.Uniforms.OrderBy(u => !u.IsHead).ThenBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase).Select(Row).ToList();
         ResetCommand = new RelayCommand(_ => Reset(), _ => SelectedUniform is not null);
         SaveCommand = new RelayCommand(_ => _ = SaveAsync(), _ => owner.CanTouchGame);
@@ -131,15 +134,17 @@ public sealed class CustomizerViewModel : ObservableObject
         SelectedUniform = row; // rebuild the slots from a fresh editor
     }
 
+    // Only uniforms the user changed are written; the profile must still be what it was when the window opened.
     async Task SaveAsync()
     {
-        foreach (var (key, e) in editors.Where(p => p.Value.IsCustomized)) doc.SetApparel(key, e.ToApparel());
+        foreach (var (key, e) in editors.Where(p => p.Value.Edited)) doc.SetApparel(key, e.ToApparel());
         var json = doc.ToJson();
-        try
+        var saved = false;
+        await owner.RunAsync($"Saving the {profile} uniforms…", async ct =>
         {
-            await Task.Run(() => store.Save(profile, json));
-            Saved?.Invoke();
-        }
-        catch (Exception e) { App.ShowError(e); } // e.g. the game was started meanwhile: the window stays open
+            await Task.Run(() => store.Save(profile, json, expected: opened), ct);
+            saved = true;
+        }, reload: false); // errors are shown there and the window stays open
+        if (saved) Saved?.Invoke();
     }
 }

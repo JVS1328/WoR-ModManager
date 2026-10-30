@@ -107,7 +107,7 @@ public class UniformEditorTests : IDisposable
     {
         var e = Editor(Key, JacketA, 999999, Odd);
         e.Select(0, JacketB);
-        Assert.Equal([JacketB, 999999u, Odd, ShirtNone, Shoe, Trouser, HatY, AdornNone], e.ToApparel());
+        Assert.Equal([JacketB, 999999u, Odd], e.ToApparel()); // slots with no known saved item stay out: the unknown id may be theirs
     }
 
     [Fact] public void Select_Jacket_CascadesToGrandchildren()
@@ -145,5 +145,22 @@ public class UniformEditorTests : IDisposable
         e.Select(0, JacketB);
         Assert.True(e.IsCustomized);
         Assert.True(Editor(Key, JacketA).IsCustomized);
+    }
+
+    [Fact] public void UnknownIds_NoDefaultsAddedNextToThem()
+    {
+        // 999999 is a modded jacket this database doesn't know: no vanilla jacket may be added beside it
+        var e = Editor(Key, 999999, Shirt1, Shoe, Trouser, HatX, AdornA);
+        Assert.Equal(0u, e.Selected(0));
+        e.Select(6, HatY);
+        Assert.Equal([999999u, Shirt1, Shoe, Trouser, HatY, AdornNone], e.ToApparel());
+    }
+
+    [Fact] public void Edited_OnlyAfterSelect()
+    {
+        var e = Editor(Key, JacketA, Shirt1);
+        Assert.False(e.Edited);
+        e.Select(0, JacketB);
+        Assert.True(e.Edited);
     }
 }

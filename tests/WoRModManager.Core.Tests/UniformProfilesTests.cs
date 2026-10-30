@@ -170,4 +170,84 @@ public class UniformProfilesTests : IDisposable
         s.Delete("MaW");
         Assert.Equal(["Default"], s.Names());
     }
+
+    [Fact] public void Switch_ApplyFails_KeepsPreviousActive()
+    {
+        Game(A);
+        var s = Store();
+        s.Sync();
+        s.Create("MaW");
+        s.Save("MaW", B);
+        File.SetAttributes(GameFile, FileAttributes.ReadOnly);
+        try { Assert.ThrowsAny<Exception>(() => s.Switch("MaW")); }
+        finally { File.SetAttributes(GameFile, FileAttributes.Normal); }
+        Assert.Equal("Default", s.Active);
+        Assert.Equal(A, File.ReadAllText(GameFile));
+        Assert.Equal(B, s.Read("MaW"));
+    }
+
+    [Fact] public void Save_Active_ApplyFails_LeavesProfileUnchanged()
+    {
+        Game(A);
+        var s = Store();
+        s.Sync();
+        File.SetAttributes(GameFile, FileAttributes.ReadOnly);
+        try { Assert.ThrowsAny<Exception>(() => s.Save("Default", B)); }
+        finally { File.SetAttributes(GameFile, FileAttributes.Normal); }
+        Assert.Equal(A, s.Read("Default"));
+    }
+
+    [Fact] public void Save_KeepsBackup_AndRefusesStaleEdits()
+    {
+        Game(A);
+        var s = Store();
+        s.Sync();
+        Assert.Throws<InvalidOperationException>(() => s.Save("Default", B, expected: "something older"));
+        Assert.Equal(A, s.Read("Default"));
+        s.Save("Default", B, expected: A);
+        Assert.Equal(A, File.ReadAllText(Assert.Single(Directory.GetFiles(Path.Combine(Profiles, ".backup", "Default")))));
+    }
+
+    [Fact] public void Rename_OntoLeftoverBackupFolder_StillMovesActive()
+    {
+        Game(A);
+        var s = Store();
+        s.Sync();
+        Directory.CreateDirectory(Path.Combine(Profiles, ".backup", "Union"));
+        Game(B);
+        s.Sync(); // gives Default a backup folder too
+        s.Rename("Default", "Union");
+        Assert.Equal("Union", s.Active);
+        Assert.Equal(["Union"], s.Names());
+        s.Rename("Union", "Union"); // same name: nothing to do
+        Assert.Equal("Union", s.Active);
+    }
+
+    [Fact] public void Delete_RemovesBackups()
+    {
+        Game(A);
+        var s = Store();
+        s.Sync();
+        s.Create("MaW");
+        s.Switch("MaW");
+        Game(B);
+        s.Sync(); // MaW gets a backup
+        s.Switch("Default");
+        s.Delete("MaW");
+        Assert.False(Directory.Exists(Path.Combine(Profiles, ".backup", "MaW")));
+    }
+
+    [Fact] public void Sync_ActiveProfileFileMissing_RecreatesItInsteadOfOverwritingAnother()
+    {
+        Game(A);
+        var s = Store();
+        s.Sync();
+        s.Create("Aaa"); // sorts first
+        File.Delete(Path.Combine(Profiles, "Default.json"));
+        Game(B);
+        s.Sync();
+        Assert.Equal("Default", s.Active);
+        Assert.Equal(B, s.Read("Default"));
+        Assert.Equal(A, s.Read("Aaa"));
+    }
 }

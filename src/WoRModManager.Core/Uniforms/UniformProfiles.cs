@@ -27,27 +27,29 @@ public sealed class UniformProfiles(string dir, string gameFile, Func<bool> isGa
     public void Sync()
     {
         if (isGameRunning()) return;
+        var game = GameText();
         var names = Names();
-        if (names.Count == 0)
+        // First run, or the active profile's file has gone: rebuild it from the game rather than adopt (and overwrite) another one.
+        if (!names.Contains(Active, Ci))
         {
-            var game = GameText();
-            WriteAtomic(FileOf(DefaultName), game ?? EmptyDoc);
-            SetActive(DefaultName);
-            if (game is null) Apply(); // a valid game file already matches Default; rewriting it would only make Steam Cloud sync it
+            var name = Active;
+            WriteAtomic(FileOf(name), game ?? EmptyDoc);
+            SetActive(name);
+            if (game is null) Apply(EmptyDoc); // a valid game file already matches; rewriting it would only make Steam Cloud sync it
             return;
         }
-        if (!names.Contains(Active, Ci)) SetActive(names[0]);
-        if (GameText() is not null) Capture();
-        else Apply();
+        if (game is not null) Capture(game);
+        else Apply(Read(Active));
     }
 
+    // The game file is written before active.txt, so a failed write leaves the old profile active and in place.
     public void Switch(string name)
     {
         name = Existing(name);
         if (isGameRunning()) throw new GameRunningException();
-        if (GameText() is not null) Capture();
+        if (GameText() is { } game) Capture(game);
+        Apply(Read(name));
         SetActive(name);
-        Apply();
     }
 
     public void Create(string name) => WriteAtomic(FileOf(Validate(name)), Read(Active));
@@ -55,11 +57,13 @@ public sealed class UniformProfiles(string dir, string gameFile, Func<bool> isGa
     public void Rename(string from, string to)
     {
         from = Existing(from);
+        if (from == to.Trim()) return;
         to = Validate(to, except: from);
         var wasActive = Ci.Equals(from, Active);
         File.Move(FileOf(from), FileOf(to)); // a case-only rename is a plain rename on NTFS
-        if (Directory.Exists(Path.Combine(BackupDir, from))) Directory.Move(Path.Combine(BackupDir, from), Path.Combine(BackupDir, to));
         if (wasActive) SetActive(to);
+        try { Directory.Move(Path.Combine(BackupDir, from), Path.Combine(BackupDir, to)); }
+        catch (IOException) { } // best effort: no backups yet, or a leftover folder already has the name
     }
 
     public void Delete(string name)
@@ -67,15 +71,22 @@ public sealed class UniformProfiles(string dir, string gameFile, Func<bool> isGa
         name = Existing(name);
         if (Ci.Equals(name, Active)) throw new InvalidOperationException("Switch to another profile before deleting this one.");
         File.Delete(FileOf(name));
+        if (Directory.Exists(Path.Combine(BackupDir, name))) Directory.Delete(Path.Combine(BackupDir, name), recursive: true);
     }
 
-    public void Save(string name, string json)
+    // expected: the profile text the editor started from. If the game saved into the profile since, the edit is refused.
+    public void Save(string name, string json, string? expected = null)
     {
         name = Existing(name);
+        var current = File.ReadAllText(FileOf(name));
+        if (expected is not null && current != expected)
+            throw new InvalidOperationException("This profile changed while you were editing it (War of Rights saved into it). Close the customizer and open it again.");
         var active = Ci.Equals(name, Active);
         if (active && isGameRunning()) throw new GameRunningException();
+        if (active) Apply(json); // game file first: if that fails nothing has changed, and if the profile write fails the next capture heals it
+        if (current == json) return;
+        Backup(name, current);
         WriteAtomic(FileOf(name), json);
-        if (active) Apply();
     }
 
     // The game file's text, or null when it's missing or not a JSON object (then it must not overwrite a profile).
@@ -87,25 +98,22 @@ public sealed class UniformProfiles(string dir, string gameFile, Func<bool> isGa
         catch (JsonException) { return null; }
     }
 
-    void Capture()
+    // Takes the text already read and checked, so a game file rewritten in between can't empty the profile.
+    void Capture(string gameText)
     {
         var name = Active;
-        var text = GameText()!;
         var current = File.ReadAllText(FileOf(name));
-        if (current == text) return;
+        if (current == gameText) return;
         Backup(name, current);
-        WriteAtomic(FileOf(name), text);
+        WriteAtomic(FileOf(name), gameText);
     }
 
-    void Apply()
+    void Apply(string text)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(gameFile))!);
-        if (File.Exists(gameFile))
-        {
-            Directory.CreateDirectory(BackupDir);
-            File.Copy(gameFile, Path.Combine(BackupDir, "game-customizations.json"), overwrite: true);
-        }
-        WriteAtomic(gameFile, File.ReadAllText(FileOf(Active)));
+        // copied as text: File.Copy would carry a read-only flag over and block the next backup
+        if (File.Exists(gameFile)) WriteAtomic(Path.Combine(BackupDir, "game-customizations.json"), File.ReadAllText(gameFile));
+        WriteAtomic(gameFile, text);
     }
 
     void Backup(string name, string text)
