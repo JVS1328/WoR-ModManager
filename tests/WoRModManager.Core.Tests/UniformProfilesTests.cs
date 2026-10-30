@@ -40,6 +40,15 @@ public class UniformProfilesTests : IDisposable
         Assert.Equal(A, s.Read("Default"));
     }
 
+    [Fact] public void Sync_FirstRun_LeavesValidGameFileUntouched()
+    {
+        Game(A);
+        var stamp = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(GameFile, stamp);
+        Store().Sync();
+        Assert.Equal(stamp, File.GetLastWriteTimeUtc(GameFile)); // no needless write for Steam Cloud to sync
+    }
+
     [Fact] public void Sync_CapturesGameChangesIntoActive_AndKeepsBackup()
     {
         Game(A);

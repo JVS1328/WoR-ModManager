@@ -5,20 +5,21 @@ public sealed record Slot(int Category, string Label, int? ParentCategory, bool 
 // One uniform's slot choices under the game's parent/child rules. Ids it doesn't know are carried through untouched.
 public sealed class UniformEditor
 {
-    // Parents come before their children, which is also the order slots are shown.
+    // The game's HierarchyRulesets/Uniform.json: the jacket is the root. Parents come before their children,
+    // which is also the order slots are shown.
     public static IReadOnlyList<Slot> UniformSlots { get; } =
     [
         new(0, "Jacket", null), new(1, "Shirt", 0),
-        new(3, "Shoes", null), new(2, "Trousers", 3),
-        new(4, "Belt", null), new(5, "Buckle", 4), new(12, "Holster", 4), new(14, "Drum", 4),
-        new(6, "Hat", null), new(7, "Hat adornment", 6), new(8, "Hat embroidery", 6),
-        new(9, "Backpack", null),
-        new(10, "Equipment", null), new(11, "Accessory", 10),
-        new(13, "Rank insignia", null),
+        new(3, "Shoes", 0), new(2, "Trousers", 3),
+        new(4, "Belt", 0), new(5, "Buckle", 4), new(12, "Holster", 4), new(14, "Drum", 4),
+        new(6, "Hat", 0), new(7, "Hat adornment", 6), new(8, "Hat embroidery", 6),
+        new(9, "Backpack", 0),
+        new(10, "Equipment", 0), new(11, "Accessory", 10),
+        new(13, "Rank insignia", 0),
     ];
 
-    // The head pairs with HeadParameters.HeadType, which is edited in-game.
-    public static IReadOnlyList<Slot> HeadSlots { get; } = [new(15, "Head", null, ReadOnly: true), new(17, "Hair", null), new(18, "Beard", null)];
+    // HumanHead.json. The head pairs with HeadParameters.HeadType, which is edited in-game.
+    public static IReadOnlyList<Slot> HeadSlots { get; } = [new(15, "Head", null, ReadOnly: true), new(17, "Hair", 15), new(18, "Beard", 15)];
 
     readonly UniformDef uniform;
     readonly ApparelDatabase db;
@@ -49,11 +50,8 @@ public sealed class UniformEditor
         var slot = Slots.FirstOrDefault(s => s.Category == category);
         if (slot is null) return [];
         var items = Allowed().Where(i => i.Category == category);
-        if (slot.ParentCategory is { } p && Slots.Any(s => s.Category == p))
-        {
-            var parent = Item(Selected(p));
-            items = items.Where(i => parent?.Children.Contains(i.Id) == true);
-        }
+        // With no parent chosen (e.g. a head the file doesn't name) nothing constrains the slot.
+        if (slot.ParentCategory is { } p && Item(Selected(p)) is { } parent) items = items.Where(i => parent.Children.Contains(i.Id));
         return items.ToList();
     }
 
@@ -63,8 +61,18 @@ public sealed class UniformEditor
         if (slot is null || slot.ReadOnly || Options(category).All(i => i.Id != id)) return;
         selected[category] = id;
         edited = true;
+        RepairChildren(category);
+    }
+
+    // A child the new parent doesn't allow is re-picked, and that change goes on down the tree.
+    void RepairChildren(int category)
+    {
         foreach (var child in Slots.Where(s => s.ParentCategory == category))
-            if (Options(child.Category).All(i => i.Id != Selected(child.Category))) Pick(child);
+        {
+            if (Options(child.Category).Any(i => i.Id == Selected(child.Category))) continue;
+            Pick(child);
+            RepairChildren(child.Category);
+        }
     }
 
     public IReadOnlyList<uint> ToApparel()

@@ -4,7 +4,10 @@ using System.Text;
 
 namespace WoRModManager.Core.Uniforms;
 
-public sealed record ApparelItem(uint Id, string Name, int Category, IReadOnlyList<uint> Children);
+public sealed record ApparelItem(uint Id, string Name, int Category, IReadOnlyList<uint> Children)
+{
+    public override string ToString() => Name;
+}
 public sealed record UniformDef(uint Key, string DisplayName, bool IsHead, IReadOnlyList<uint> Allowed);
 
 // The game's compiled uniform and apparel lists (Generated/*.bin), read from the GameData pak the game loads last.

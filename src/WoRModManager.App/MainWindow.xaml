@@ -11,6 +11,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -40,19 +41,6 @@
                 <TextBlock DockPanel.Dock="Left" Text="WoR MOD MANAGER" Foreground="{StaticResource GoldBrush}" FontSize="14" FontWeight="Bold"
                            VerticalAlignment="Center" Margin="0,0,32,0" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <ComboBox ItemsSource="{Binding Profiles.Names}" SelectedItem="{Binding Profiles.Selected}" IsEnabled="{Binding CanTouchGame}" Width="150"
-                              AutomationProperties.Name="Uniform profile"
-                              ToolTip="Uniform profile: the game saves your in-game uniform changes into the selected profile" />
-                    <Button x:Name="ProfileMenuButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="ProfileMenu_Click" Margin="2,0,12,0"
-                            AutomationProperties.Name="Uniform profile options" ToolTip="New, rename or delete uniform profiles">
-                        <Button.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="New profile…" Command="{Binding Profiles.NewCommand}" />
-                                <MenuItem Header="Rename…" Command="{Binding Profiles.RenameCommand}" />
-                                <MenuItem Header="Delete" Command="{Binding Profiles.DeleteCommand}" />
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                    </Button>
                     <Button Style="{StaticResource GreenButton}" Content="{Binding PlayText}" Command="{Binding PlayCommand}" Margin="0,0,12,0"
                             AutomationProperties.Name="Play War of Rights" ToolTip="Launch War of Rights through Steam" />
                     <Border Style="{StaticResource Pill}" Margin="0,0,12,0" ToolTip="Installed War of Rights build (from Steam)">
@@ -91,22 +79,44 @@
             </DockPanel>
         </Border>
 
-        <ProgressBar Grid.Row="2" Height="2" IsIndeterminate="True" BorderThickness="0" Background="Transparent" Foreground="{StaticResource GoldBrush}"
+        <!-- Uniform profile bar -->
+        <Border Grid.Row="2" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="20,6,12,6">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Uniform profile" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                <ComboBox ItemsSource="{Binding Profiles.Names}" SelectedItem="{Binding Profiles.Selected}" IsEnabled="{Binding CanTouchGame}" Width="180"
+                          AutomationProperties.Name="Uniform profile"
+                          ToolTip="The game saves your in-game uniform changes into the selected profile" />
+                <Button x:Name="ProfileMenuButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="ProfileMenu_Click" Margin="2,0,8,0"
+                        AutomationProperties.Name="Uniform profile options" ToolTip="New, rename or delete uniform profiles">
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="New profile…" Command="{Binding Profiles.NewCommand}" />
+                            <MenuItem Header="Rename…" Command="{Binding Profiles.RenameCommand}" />
+                            <MenuItem Header="Delete" Command="{Binding Profiles.DeleteCommand}" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
+                <Button Style="{StaticResource GhostButton}" Content="Customize…" Command="{Binding Profiles.CustomizeCommand}"
+                        AutomationProperties.Name="Customize uniforms" ToolTip="Pick the items of this profile's uniforms" />
+            </StackPanel>
+        </Border>
+
+        <ProgressBar Grid.Row="3" Height="2" IsIndeterminate="True" BorderThickness="0" Background="Transparent" Foreground="{StaticResource GoldBrush}"
                      Visibility="{Binding IsWorking, Converter={StaticResource BoolToVis}}" AutomationProperties.Name="Working" />
 
-        <Border Grid.Row="3" Background="{StaticResource AmberBgBrush}" Padding="20,8"
+        <Border Grid.Row="4" Background="{StaticResource AmberBgBrush}" Padding="20,8"
                 Visibility="{Binding IsOffline, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="Offline / GitHub busy — showing last known list" Foreground="{StaticResource AmberBrush}" />
         </Border>
 
-        <Grid Grid.Row="4">
+        <Grid Grid.Row="5">
             <views:OfficialModsView Visibility="{Binding IsChecked, ElementName=OfficialTab, Converter={StaticResource BoolToVis}}" />
             <views:LibraryView Visibility="{Binding IsChecked, ElementName=LibraryTab, Converter={StaticResource BoolToVis}}" />
             <views:ReShadeView DataContext="{Binding ReShade}" Visibility="{Binding IsChecked, ElementName=ReShadeTab, Converter={StaticResource BoolToVis}}" />
         </Grid>
 
         <!-- Status line -->
-        <Border Grid.Row="5" Background="{StaticResource BarBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="20,6">
+        <Border Grid.Row="6" Background="{StaticResource BarBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="20,6">
             <Border.Style>
                 <Style TargetType="Border">
                     <Style.Triggers>

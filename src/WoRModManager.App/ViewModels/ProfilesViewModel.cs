@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows;
 using System.Windows.Input;
 using WoRModManager.App.Views;
 using WoRModManager.Core.Uniforms;
@@ -18,8 +19,10 @@ public sealed class ProfilesViewModel : ObservableObject
         NewCommand = new RelayCommand(_ => _ = NewAsync(), _ => CanChange);
         RenameCommand = new RelayCommand(_ => _ = RenameAsync(), _ => CanChange);
         DeleteCommand = new RelayCommand(_ => _ = DeleteAsync(), _ => CanChange && Names.Count > 1);
+        CustomizeCommand = new RelayCommand(_ => _ = CustomizeAsync(), _ => CanChange);
     }
 
+    public ICommand CustomizeCommand { get; }
     public ICommand NewCommand { get; }
     public ICommand RenameCommand { get; }
     public ICommand DeleteCommand { get; }
@@ -93,6 +96,28 @@ public sealed class ProfilesViewModel : ObservableObject
         var from = Selected!;
         var name = PromptWindow.AskText($"Rename the uniform profile {from}.", from, "Rename");
         return name is null ? Task.CompletedTask : ChangeAsync($"Renaming {from}…", s => s.Rename(from, name));
+    }
+
+    // Reads the database the game will load, so it matches the mods enabled right now.
+    async Task CustomizeAsync()
+    {
+        ApparelDatabase? db = null;
+        var assets = owner.Paths.Assets;
+        if (!await owner.RunAsync("Reading the game's uniforms…", async ct => db = await Task.Run(() => ApparelDatabase.Load(assets), ct), reload: false))
+            return;
+        if (db is null)
+        {
+            PromptWindow.Show("Couldn't find the game's uniform data in the Assets folder.");
+            return;
+        }
+        CustomizerViewModel vm;
+        try { vm = new CustomizerViewModel(owner, Selected!, Store!, db); }
+        catch (Exception e)
+        {
+            App.ShowError(e);
+            return;
+        }
+        new CustomizerWindow(vm) { Owner = Application.Current.MainWindow }.ShowDialog();
     }
 
     // The selected profile is the active one, so deleting it switches to another first.

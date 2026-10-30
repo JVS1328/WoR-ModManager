@@ -7,6 +7,7 @@ namespace WoRModManager.Core.Tests;
 public class UniformEditorTests : IDisposable
 {
     const uint Key = 10, JacketA = 100, Shirt1 = 101, JacketB = 102, ShirtNone = 103, Shirt2 = 104, Shoe = 110, Trouser = 111, Odd = 120;
+    const uint HatX = 130, HatY = 131, AdornA = 132, AdornNone = 133;
     const uint Head1 = 200, Hair1 = 201, Hair2 = 202, Head2 = 203;
 
     readonly TempGame _game = new();
@@ -16,13 +17,14 @@ public class UniformEditorTests : IDisposable
     {
         _game.WritePak("GameData.pak", ApparelBins.Pak(
             ApparelBins.Uniforms(
-                (Key, "4th Pennsylvania - Private", 1, [JacketA, Shirt1, JacketB, ShirtNone, Shirt2, Shoe, Trouser, Odd]),
+                (Key, "4th Pennsylvania - Private", 1, [JacketA, Shirt1, JacketB, ShirtNone, Shirt2, Shoe, Trouser, Odd, HatX, HatY, AdornA, AdornNone]),
                 (ApparelDatabase.HumanHeadKey, "Head", ApparelDatabase.HumanHeadKey, [Head1, Hair1, Hair2, Head2])),
             ApparelBins.Apparel(
-                (JacketA, "US_JacketA", 0, [Shirt1]), (JacketB, "US_JacketB", 0, [ShirtNone, Shirt2]),
+                (JacketA, "US_JacketA", 0, [Shirt1, Shoe, HatX]), (JacketB, "US_JacketB", 0, [ShirtNone, Shirt2, Shoe, HatY]),
+                (HatX, "US_HatX", 6, [AdornA]), (HatY, "US_HatY", 6, [AdornNone]), (AdornA, "US_AdornA", 7, []), (AdornNone, "US_AdornNone", 7, []),
                 (Shirt1, "US_Shirt1", 1, []), (ShirtNone, "US_ShirtNone", 1, []), (Shirt2, "US_Shirt2", 1, []),
                 (Shoe, "US_Shoe", 3, [Trouser]), (Trouser, "US_Trouser", 2, []), (Odd, "US_Odd", 20, []),
-                (Head1, "Head_John", 15, []), (Head2, "Head_Bill", 15, []), (Hair1, "Hair_Short", 17, []), (Hair2, "Hair_Long", 17, []))));
+                (Head1, "Head_John", 15, [Hair1, Hair2]), (Head2, "Head_Bill", 15, [Hair1]), (Hair1, "Hair_Short", 17, []), (Hair2, "Hair_Long", 17, []))));
         _db = ApparelDatabase.Load(_game.Paths.Assets)!;
     }
 
@@ -83,7 +85,7 @@ public class UniformEditorTests : IDisposable
         var e = Editor(Key, JacketA, Shirt1);
         Assert.Equal([Shirt1], e.Options(1).Select(i => i.Id));
         Assert.Equal([JacketA, JacketB], e.Options(0).Select(i => i.Id));
-        Assert.Equal([0, 1, 3, 2], e.Slots.Select(s => s.Category)); // no belt/hat items: those slots are hidden
+        Assert.Equal([0, 1, 3, 2, 6, 7], e.Slots.Select(s => s.Category)); // no belt items: those slots are hidden
     }
 
     [Fact] public void Select_RepairsInvalidChild_PreferringNone()
@@ -105,7 +107,16 @@ public class UniformEditorTests : IDisposable
     {
         var e = Editor(Key, JacketA, 999999, Odd);
         e.Select(0, JacketB);
-        Assert.Equal([JacketB, 999999u, Odd, ShirtNone, Shoe, Trouser], e.ToApparel());
+        Assert.Equal([JacketB, 999999u, Odd, ShirtNone, Shoe, Trouser, HatY, AdornNone], e.ToApparel());
+    }
+
+    [Fact] public void Select_Jacket_CascadesToGrandchildren()
+    {
+        var e = Editor(Key, JacketA, Shirt1, Shoe, Trouser, HatX, AdornA);
+        e.Select(0, JacketB); // Jacket B doesn't allow Hat X, so the hat changes and its adornment follows
+        Assert.Equal(HatY, e.Selected(6));
+        Assert.Equal(AdornNone, e.Selected(7));
+        Assert.Equal(Shoe, e.Selected(3)); // still allowed: kept
     }
 
     [Fact] public void HeadSlot_IsReadOnly()

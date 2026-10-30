@@ -30,9 +30,10 @@ public sealed class UniformProfiles(string dir, string gameFile, Func<bool> isGa
         var names = Names();
         if (names.Count == 0)
         {
-            WriteAtomic(FileOf(DefaultName), GameText() ?? EmptyDoc);
+            var game = GameText();
+            WriteAtomic(FileOf(DefaultName), game ?? EmptyDoc);
             SetActive(DefaultName);
-            Apply();
+            if (game is null) Apply(); // a valid game file already matches Default; rewriting it would only make Steam Cloud sync it
             return;
         }
         if (!names.Contains(Active, Ci)) SetActive(names[0]);
