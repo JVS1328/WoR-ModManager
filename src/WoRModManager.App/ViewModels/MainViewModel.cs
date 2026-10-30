@@ -18,6 +18,7 @@ using WoRModManager.Core.Install;
 using WoRModManager.Core.Nexus;
 using WoRModManager.Core.ReShade;
 using WoRModManager.Core.State;
+using WoRModManager.Core.Uniforms;
 
 namespace WoRModManager.App.ViewModels;
 
@@ -58,6 +59,8 @@ public sealed class MainViewModel : ObservableObject
         UpdateManagerCommand = new RelayCommand(_ => _ = UpdateManagerAsync(), _ => IsIdle && ManagerUpdate is not null);
         PlayCommand = new RelayCommand(_ => Play(), _ => !GameRunning && !IsBusy && !HasModWork);
         ReShade = new ReShadeViewModel(this);
+        Profiles = new ProfilesViewModel(this);
+        GameExited += Profiles.Sync;
         Paths = paths;
         gameRunning = IsGameRunning();
         Load(paths);
@@ -68,6 +71,7 @@ public sealed class MainViewModel : ObservableObject
 
     public GamePaths Paths { get; private set; }
     public ReShadeViewModel ReShade { get; }
+    public ProfilesViewModel Profiles { get; }
     public ObservableCollection<ModCardViewModel> Official { get; } = [];
     public ObservableCollection<ModCardViewModel> Library { get; } = [];
     public ICommand RefreshCommand { get; }
@@ -275,6 +279,7 @@ public sealed class MainViewModel : ObservableObject
         Paths = p;
         service = new ModService(p, gh, dl, IsGameRunning);
         reshade = new ReShadeService(p);
+        Profiles.Reload(new UniformProfiles(Path.Combine(DataDir, "UniformProfiles"), p.CustomizationsFile, IsGameRunning));
         recoverPending = true; // done by the next library load, off the UI thread while busy
         installedBuild = SteamLocator.ReadBuildId(p.GameRoot);
         GameBuild = installedBuild is { } b ? $"Game build {b}" : "Game build unknown";

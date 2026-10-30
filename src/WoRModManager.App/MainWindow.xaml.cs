@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using Microsoft.Win32;
 using WoRModManager.App.ViewModels;
@@ -18,12 +19,16 @@ public partial class MainWindow : Window
 
     void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow(Vm) { Owner = this }.ShowDialog();
 
-    void AddMod_Click(object sender, RoutedEventArgs e)
+    void AddMod_Click(object sender, RoutedEventArgs e) => OpenMenu(AddModButton, 270); // right-aligned with the button (menu is 270 wide)
+
+    void ProfileMenu_Click(object sender, RoutedEventArgs e) => OpenMenu(ProfileMenuButton, ProfileMenuButton.ActualWidth);
+
+    static void OpenMenu(Button button, double width)
     {
-        var menu = AddModButton.ContextMenu;
-        menu.PlacementTarget = AddModButton;
+        var menu = button.ContextMenu;
+        menu.PlacementTarget = button;
         menu.Placement = PlacementMode.Bottom;
-        menu.HorizontalOffset = AddModButton.ActualWidth - 270; // right-align with the button (menu is 270 wide)
+        menu.HorizontalOffset = button.ActualWidth - width;
         menu.VerticalOffset = 4;
         menu.IsOpen = true;
     }

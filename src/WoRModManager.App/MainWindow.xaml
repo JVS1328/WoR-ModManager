@@ -40,6 +40,19 @@
                 <TextBlock DockPanel.Dock="Left" Text="WoR MOD MANAGER" Foreground="{StaticResource GoldBrush}" FontSize="14" FontWeight="Bold"
                            VerticalAlignment="Center" Margin="0,0,32,0" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ComboBox ItemsSource="{Binding Profiles.Names}" SelectedItem="{Binding Profiles.Selected}" IsEnabled="{Binding CanTouchGame}" Width="150"
+                              AutomationProperties.Name="Uniform profile"
+                              ToolTip="Uniform profile: the game saves your in-game uniform changes into the selected profile" />
+                    <Button x:Name="ProfileMenuButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="ProfileMenu_Click" Margin="2,0,12,0"
+                            AutomationProperties.Name="Uniform profile options" ToolTip="New, rename or delete uniform profiles">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="New profile…" Command="{Binding Profiles.NewCommand}" />
+                                <MenuItem Header="Rename…" Command="{Binding Profiles.RenameCommand}" />
+                                <MenuItem Header="Delete" Command="{Binding Profiles.DeleteCommand}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                     <Button Style="{StaticResource GreenButton}" Content="{Binding PlayText}" Command="{Binding PlayCommand}" Margin="0,0,12,0"
                             AutomationProperties.Name="Play War of Rights" ToolTip="Launch War of Rights through Steam" />
                     <Border Style="{StaticResource Pill}" Margin="0,0,12,0" ToolTip="Installed War of Rights build (from Steam)">
